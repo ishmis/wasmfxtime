@@ -25,12 +25,12 @@ pub const INITIAL_HANDLER_LIST_CAPACITY: usize = 4;
 
 /// TODO
 #[allow(dead_code)]
-pub const ENABLE_DEBUG_PRINTING: bool = false;
+pub const ENABLE_DEBUG_PRINTING: bool = true;
 
 #[macro_export]
 macro_rules! debug_println {
     ($( $args:expr ),+ ) => {
-        #[cfg(debug_assertions)]
+        // #[cfg(debug_assertions)]
         if ENABLE_DEBUG_PRINTING {
             println!($($args),*);
         }

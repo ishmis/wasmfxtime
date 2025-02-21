@@ -2890,13 +2890,20 @@ pub fn translate_operator(
             let params = state.peekn(param_types.len());
             let param_count = params.len();
 
+            println!(
+                "SUSPEND: tag params: {:?}\ntag return_types: {:?}",
+                param_types, return_types
+            );
+
+            println!("SUSPEND: params are {:?}", params);
+
             let return_values =
                 environ.translate_suspend(builder, *tag_index, params, &return_types);
 
             state.popn(param_count);
+            println!("SUSPEND: return values are  {:?}", return_values);
             state.pushn(&return_values);
         }
-        // TODO(ishmis): add stuff here!!
         Operator::Resume {
             cont_type_index,
             resume_table,
@@ -2921,6 +2928,8 @@ pub fn translate_operator(
             let arity = environ.continuation_arguments(*cont_type_index).len();
             let (contobj, call_args) = state.peekn(arity + 1).split_last().unwrap();
 
+            println!("RESUME: got resume call_args as {:?}", call_args);
+
             let cont_return_vals = environ.translate_resume(
                 builder,
                 *cont_type_index,
@@ -2930,6 +2939,7 @@ pub fn translate_operator(
             )?;
 
             state.popn(arity + 1); // arguments + continuation
+            println!("RESUME: got cont return vals as: {:?}", cont_return_vals);
             state.pushn(&cont_return_vals);
         }
         Operator::ResumeThrow {
@@ -2977,6 +2987,107 @@ pub fn translate_operator(
 
             state.popn(arity);
             state.pushn(&switch_return_values)
+        }
+        // TODO(ishmis): fix these
+        Operator::ResumeWith {
+            named_cont_type_index,
+            resume_table,
+        } => {
+            // We translate the block indices in the resumetable to actual Blocks.
+            let mut resumetable = vec![];
+            for handle in &resume_table.handlers {
+                match handle {
+                    wasmparser::Handle::OnLabel { tag, label } => {
+                        let i = state.control_stack.len() - 1 - (*label as usize);
+                        let frame = &mut state.control_stack[i];
+                        // This is side-effecting!
+                        frame.set_branched_to_exit();
+                        resumetable.push((*tag, Some(frame.br_destination())));
+                    }
+                    wasmparser::Handle::OnSwitch { tag } => {
+                        resumetable.push((*tag, None));
+                    }
+                }
+            }
+
+            let arity = environ.continuation_arguments(*named_cont_type_index).len();
+
+            println!("got arity {}", arity);
+            let contobj = state.pop1();
+            // "name"
+            state.push1(contobj);
+            state.push1(contobj);
+            let (contobj, call_args) = state.peekn(arity + 1).split_last().unwrap();
+
+            println!("got resume call_args as {:?}", call_args);
+
+            // TODO(ishmis): we are giving the cont with ref handler + call_args, call_args wont have a name tho!
+            // TODO(ishmis): assert cont args is at least 1-ary and has a (ref handler) type
+            let cont_return_vals = environ.translate_resume_with(
+                builder,
+                *named_cont_type_index,
+                *contobj,
+                call_args,
+                resumetable.as_slice(),
+            )?;
+
+            println!(
+                "resume_with: about to pop {}, stack has size {}",
+                arity + 1,
+                state.stack.len()
+            );
+            state.popn(arity + 1); // arguments + continuation - handler name
+            println!("resumewith return vals were: {:?}", cont_return_vals);
+            state.pushn(&cont_return_vals);
+
+            println!("finished handling resumeWith");
+        }
+        Operator::SuspendTo {
+            handler_type_index,
+            tag_index,
+        } => {
+            environ.named_handler(*handler_type_index);
+
+            // TODO(ishmis): get handler and check that the name matches!
+            let tag_param_types = environ.tag_params(*tag_index).to_vec();
+            let return_types = environ.tag_returns(*tag_index).to_vec();
+
+            println!(
+                "suspend_to tag params: {:?}\ntag return_types: {:?}",
+                tag_param_types, return_types
+            );
+
+            // ishmis: assuming name not on state stack?? (update: it has to be for us to have a concrete ref to it)
+            let params = state.peekn(tag_param_types.len() + 1); // tag params + handler
+
+            println!(
+                "params to suspendto are {:?}, param_count: {:?}",
+                params,
+                params.len()
+            );
+
+            let param_count = params.len();
+            let (named_handler_obj, params) = params.split_last().unwrap();
+
+            let return_values = environ.translate_suspend_to(
+                builder,
+                *tag_index,
+                *named_handler_obj,
+                params,
+                &return_types,
+            );
+
+            println!(
+                "suspend_to: about to pop {}, stack has size {}",
+                param_count,
+                state.stack.len()
+            );
+
+            state.popn(param_count);
+            println!("suspend_to: return vals were: {:?}", return_values);
+            state.pushn(&return_values);
+
+            println!("finished handling suspendTo");
         }
 
         Operator::GlobalAtomicGet { .. }

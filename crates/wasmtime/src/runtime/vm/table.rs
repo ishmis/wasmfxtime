@@ -67,7 +67,7 @@ impl TableElementType {
             TableElementType::GcRef => core::mem::size_of::<Option<VMGcRef>>(),
             TableElementType::Cont => core::mem::size_of::<ContTableElem>(),
             // TODO(ishmis)
-            TableElementType::Handler => todo!(),
+            TableElementType::Handler => todo!("Handler not impl element_size"),
         }
     }
 }
@@ -399,7 +399,7 @@ impl Table {
                 maximum: maximum,
             })),
             // TODO(ishmis)
-            TableElementType::Handler => todo!(),
+            TableElementType::Handler => todo!("handler not impl wasm_to_table_type"),
         }
     }
 
@@ -480,7 +480,7 @@ impl Table {
                 Ok(Self::from(StaticContTable { data, size }))
             }
             // TODO(ishmis)
-            TableElementType::Handler => todo!(),
+            TableElementType::Handler => todo!("handler not impl new_static"),
         }
     }
 
@@ -680,7 +680,7 @@ impl Table {
                 contrefs[start..end].fill(c);
             }
             // TODO(ishmis)
-            TableElement::HandlerRef(_vmhdl_obj) => todo!(),
+            TableElement::HandlerRef(_vmhdl_obj) => todo!("handler not impl fill"),
         }
 
         Ok(())
@@ -822,7 +822,7 @@ impl Table {
                 .copied()
                 .map(|e| TableElement::ContRef(e)),
             // TODO(ishmis)
-            TableElementType::Handler => todo!(),
+            TableElementType::Handler => todo!("handler not impl get"),
         }
     }
 
@@ -854,7 +854,7 @@ impl Table {
                 *self.contrefs_mut().get_mut(index).ok_or(())? = c;
             }
             // TODO(ishmis)
-            TableElement::HandlerRef(_vmhdl_obj) => todo!(),
+            TableElement::HandlerRef(_vmhdl_obj) => todo!("handler not impl set"),
         }
         Ok(())
     }
@@ -1092,7 +1092,7 @@ impl Table {
                     .copy_from_slice(&src_table.contrefs()[src_range]);
             }
             // TODO(ishmis)
-            TableElementType::Handler => todo!(),
+            TableElementType::Handler => todo!("handler not impl copy_elements"),
         }
     }
 
@@ -1146,7 +1146,7 @@ impl Table {
                 self.contrefs_mut().copy_within(src_range, dst_range.start);
             }
             // TODO(ishmis)
-            TableElementType::Handler => todo!(),
+            TableElementType::Handler => todo!("handler not impl copy_elements_within"),
         }
     }
 }

@@ -144,6 +144,7 @@ pub(crate) mod typed_continuation_helpers {
     /// * `msg` : String literal, containing placeholders like those supported by println!
     /// * remaining arguments: ir::Values filled into the placeholders in `msg`
     #[allow(unused_macros, reason = "TODO")]
+    #[macro_export]
     macro_rules! emit_debug_println {
         ($env : expr, $builder : expr, $msg : literal, $( $arg:expr ),*) => {
             let msg_newline : &'static str= std::concat!(
@@ -233,6 +234,7 @@ pub(crate) mod typed_continuation_helpers {
     }
 
     /// Used to implement other macros, do not use directly.
+    #[macro_export]
     macro_rules! emit_debug_assert_icmp {
         ( $env : expr,
             $builder: expr,
@@ -253,6 +255,7 @@ pub(crate) mod typed_continuation_helpers {
         };
     }
 
+    #[macro_export]
     macro_rules! emit_debug_assert {
         ($env: expr, $builder: expr, $condition: expr) => {
             let msg: &'static str = std::concat!(
@@ -268,18 +271,21 @@ pub(crate) mod typed_continuation_helpers {
         };
     }
 
+    #[macro_export]
     macro_rules! emit_debug_assert_eq {
         ($env: expr, $builder: expr, $v1 : expr, $v2: expr) => {
             emit_debug_assert_icmp!($env, $builder, IntCC::Equal, "==", $v1, $v2);
         };
     }
 
+    #[macro_export]
     macro_rules! emit_debug_assert_ne {
         ($env: expr, $builder: expr, $v1 : expr, $v2: expr) => {
             emit_debug_assert_icmp!($env, $builder, IntCC::NotEqual, "!=", $v1, $v2);
         };
     }
 
+    #[macro_export]
     macro_rules! emit_debug_assert_ule {
         ($env: expr, $builder: expr, $v1 : expr, $v2: expr) => {
             emit_debug_assert_icmp!(

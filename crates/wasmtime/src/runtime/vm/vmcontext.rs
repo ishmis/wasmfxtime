@@ -496,7 +496,7 @@ impl VMGlobalDefinition {
                 }
                 WasmHeapTopType::Func => *global.as_func_ref_mut() = raw.get_funcref().cast(),
                 WasmHeapTopType::Cont => *global.as_func_ref_mut() = raw.get_funcref().cast(), // TODO(dhil): temporary hack.
-                WasmHeapTopType::Handler => todo!(), // TODO(ishmis)
+                WasmHeapTopType::Handler => todo!("handler not impl from_val_row"), // TODO(ishmis)
             },
         }
         Ok(global)

@@ -5,7 +5,6 @@ use core::{fmt, ops::Range};
 use cranelift_entity::entity_impl;
 use serde_derive::{Deserialize, Serialize};
 use smallvec::SmallVec;
-use std::vec::Vec;
 
 /// A trait for things that can trace all type-to-type edges, aka all type
 /// indices within this thing.
@@ -847,15 +846,14 @@ impl TypeTrace for WasmContType {
 /// A concrete handler type.
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct WasmHandlerType {
-    /// list of values left on stack after calling handler is called
-    pub vals: Vec<WasmValType>,
+    /// list of values left on stack after calling handler
+    pub values: Box<[WasmValType]>,
 }
 
-// TODO(ishmis): do this
 impl fmt::Display for WasmHandlerType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "(handler")?;
-        for ty in self.vals.iter() {
+        for ty in self.values.iter() {
             write!(f, " {ty}")?;
         }
         write!(f, ")")
@@ -864,29 +862,30 @@ impl fmt::Display for WasmHandlerType {
 
 impl WasmHandlerType {
     /// Constructs a new handler type.
-    pub fn new(_idx: EngineOrModuleTypeIndex) -> Self {
-        todo!()
-    }
-
-    /// Returns the (module interned) index to the underlying function type.
-    pub fn interned_type_index(self) -> ModuleInternedTypeIndex {
-        todo!()
-    }
+    pub fn new(values: Box<[WasmValType]>) -> Self {
+        WasmHandlerType { values }
+    } 
 }
 
 impl TypeTrace for WasmHandlerType {
-    fn trace<F, E>(&self, _func: &mut F) -> Result<(), E>
+    fn trace<F, E>(&self, func: &mut F) -> Result<(), E>
     where
         F: FnMut(EngineOrModuleTypeIndex) -> Result<(), E>,
     {
-        todo!()
+        for v in self.values.iter() {
+            v.trace(func)?;
+        }
+        Ok(())
     }
 
-    fn trace_mut<F, E>(&mut self, _func: &mut F) -> Result<(), E>
+    fn trace_mut<F, E>(&mut self, func: &mut F) -> Result<(), E>
     where
         F: FnMut(&mut EngineOrModuleTypeIndex) -> Result<(), E>,
     {
-        todo!()
+        for v in self.values.iter_mut() {
+            v.trace_mut(func)?;
+        }
+        Ok(())
     }
 }
 
@@ -2247,8 +2246,9 @@ pub trait TypeConvert {
             wasmparser::CompositeInnerType::Cont(c) => {
                 WasmCompositeInnerType::Cont(self.convert_cont_type(c))
             }
-            // TODO(ishmis)
-            wasmparser::CompositeInnerType::Handler(_) => todo!(),
+            wasmparser::CompositeInnerType::Handler(h) => {
+                WasmCompositeInnerType::Handler(self.convert_handler_type(h))
+            }
         };
         WasmCompositeType {
             inner,
@@ -2306,6 +2306,13 @@ pub trait TypeConvert {
             WasmContType::new(sigidx)
         } else {
             panic!("Failed to extract signature index for continuation type.")
+        }
+    }
+
+    /// Converts a wasmparser handler type to a wasmtime type
+    fn convert_handler_type(&self, ty: &wasmparser::HandlerType) -> WasmHandlerType {
+        WasmHandlerType {
+            values: ty.vals.iter().map(|&f| self.convert_valtype(f)).collect(),
         }
     }
 

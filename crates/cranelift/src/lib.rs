@@ -209,8 +209,8 @@ fn reference_type(wasm_ht: WasmHeapType, pointer_type: ir::Type) -> ir::Type {
     match wasm_ht.top() {
         WasmHeapTopType::Func => pointer_type,
         WasmHeapTopType::Cont => func_environ::wasmfx_impl::vm_contobj_type(pointer_type),
-        // TODO(ishmis)
-        WasmHeapTopType::Handler => unimplemented!(),
+        // TODO(ishmis): check that this is right
+        WasmHeapTopType::Handler => pointer_type,
         WasmHeapTopType::Any | WasmHeapTopType::Extern => ir::types::I32,
     }
 }

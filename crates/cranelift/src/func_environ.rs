@@ -3,6 +3,7 @@ use crate::translate::{
     FuncTranslationState, GlobalVariable, Heap, HeapData, StructFieldsVec, TableData, TableSize,
     TargetEnvironment,
 };
+pub(crate) use crate::wasmfx::named;
 use crate::{gc, BuiltinFunctionSignatures, TRAP_INTERNAL_ASSERT};
 use cranelift_codegen::cursor::FuncCursor;
 use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
@@ -1486,7 +1487,7 @@ impl<'a, 'func, 'module_env> Call<'a, 'func, 'module_env> {
 
             // TODO(ishmis): check this
             WasmHeapType::NoHandler | WasmHeapType::ConcreteHandler(_) | WasmHeapType::Handler => {
-                unreachable!()
+                unreachable!("no")
             }
         }
 
@@ -3322,6 +3323,28 @@ impl FuncEnvironment<'_> {
         wasmfx_impl::translate_switch(self, builder, tag_index, contobj, switch_args, return_types)
     }
 
+    pub fn translate_resume_with(
+        &mut self,
+        builder: &mut FunctionBuilder<'_>,
+        type_index: u32,
+        contobj: ir::Value,
+        resume_args: &[ir::Value],
+        resumetable: &[(u32, Option<ir::Block>)],
+    ) -> WasmResult<Vec<ir::Value>> {
+        named::translate_resume_with(self, builder, type_index, contobj, resume_args, resumetable)
+    }
+
+    pub fn translate_suspend_to(
+        &mut self,
+        builder: &mut FunctionBuilder<'_>,
+        tag_index: u32,
+        hdlobj: ir::Value, 
+        suspend_args: &[ir::Value],
+        tag_return_types: &[WasmValType],
+    ) -> Vec<ir::Value> {
+        named::translate_suspend_to(self, builder, tag_index, hdlobj, suspend_args, tag_return_types)
+    }
+
     pub fn continuation_arguments(&self, index: u32) -> &[WasmValType] {
         let idx = self.module.types[TypeIndex::from_u32(index)];
         self.types[self.types[idx].unwrap_cont().clone().interned_type_index()]
@@ -3334,6 +3357,12 @@ impl FuncEnvironment<'_> {
         self.types[self.types[idx].unwrap_cont().clone().interned_type_index()]
             .unwrap_func()
             .returns()
+    }
+
+    pub fn named_handler(&self, hdl_index: u32) {
+        let idx = self.module.types[TypeIndex::from_u32(hdl_index)];
+        let bruh = self.types[idx].unwrap_handler();
+        println!("i got the handler {:?}", bruh);
     }
 
     pub fn tag_params(&self, tag_index: u32) -> &[WasmValType] {

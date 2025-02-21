@@ -2681,7 +2681,7 @@ impl HandlerType {
     /// other.
     pub fn matches(&self, _other: &HandlerType) -> bool {
         // TODO(ishmis): discuss this
-        todo!()
+        todo!("Handler matches not impl!")
     }
 
     pub(crate) fn from_shared_type_index(engine: &Engine, index: VMSharedTypeIndex) -> HandlerType {
