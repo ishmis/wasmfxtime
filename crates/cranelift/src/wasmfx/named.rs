@@ -1,62 +1,27 @@
-// TODO(ishmis)
-// Copy over optimsed for now and get rid of what we dont need
-// Later:
-// allocate name with cont.new -> fatpointer -> counter of name
-// counter on stack to compare
-
 use crate::emit_debug_assert;
 use crate::emit_debug_assert_eq;
 use crate::emit_debug_assert_icmp;
 use crate::emit_debug_assert_ule;
 use crate::emit_debug_println;
+use crate::translate::FuncTranslationState;
 use crate::wasmfx::optimized::typed_continuation_helpers as tc;
-use crate::wasmfx::optimized::vmcontref_load_values;
+
 use crate::wasmfx::optimized::vmcontref_store_payloads;
 use crate::wasmfx::optimized::vmctx_store_payloads;
 use crate::wasmfx::optimized::ControlEffect;
 use crate::wasmfx::shared;
 
 use cranelift_codegen::ir;
-use cranelift_codegen::ir::Value;
 use itertools::{Either, Itertools};
 
 use cranelift_codegen::ir::condcodes::*;
 use cranelift_codegen::ir::types::*;
 use cranelift_codegen::ir::{Block, BlockCall, InstBuilder, JumpTableData};
 use cranelift_frontend::FunctionBuilder;
-use named_handler_helpers::VMHandlerRef;
-use object::U32;
 use wasmtime_environ::PtrSize;
 use wasmtime_environ::{WasmResult, WasmValType};
 
 use super::optimized::typed_continuation_helpers::StackChain;
-
-pub(crate) mod named_handler_helpers {
-    use cranelift_codegen::ir;
-
-    pub struct VMHandlerRef {
-        pub address: ir::Value,
-    }
-
-    impl VMHandlerRef {
-        pub fn new(address: ir::Value) -> VMHandlerRef {
-            VMHandlerRef { address }
-        }
-
-        // TODO(ishmis): check if needed
-        // #[allow(clippy::cast_possible_truncation, reason = "TODO")]
-        // pub fn get_fiber_stack<'a>(
-        //     &self,
-        //     _env: &mut crate::func_environ::FuncEnvironment<'a>,
-        //     builder: &mut FunctionBuilder,
-        // ) -> FiberStack {
-        //     // The top of stack field is stored at offset 0 of the `FiberStack`.
-        //     let offset = wasmtime_continuations::offsets::vm_cont_ref::STACK as i32;
-        //     let fiber_stack_top_of_stack_ptr = builder.ins().iadd_imm(self.address, offset as i64);
-        //     FiberStack::new(fiber_stack_top_of_stack_ptr)
-        // }
-    }
-}
 
 #[allow(clippy::cast_possible_truncation, reason = "TODO")]
 fn vmcontref_load_return_values<'a>(
@@ -161,7 +126,6 @@ fn vmctx_load_payloads<'a>(
 /// ... execution continues here here ...
 ///
 fn search_named_handler<'a>(
-    // TODO(ishmis): add my own version to check name by adding pointer to stack (name check and then tag check)
     env: &mut crate::func_environ::FuncEnvironment<'a>,
     builder: &mut FunctionBuilder,
     start: &tc::StackChain,
@@ -208,9 +172,7 @@ fn search_named_handler<'a>(
         let parent_link = vmcontref.get_parent_stack_chain(env, builder);
 
         // check names match
-        let names_match = builder
-            .ins()
-            .icmp(IntCC::Equal, handler_addr, contref);
+        let names_match = builder.ins().icmp(IntCC::Equal, handler_addr, contref);
         emit_debug_println!(
             env,
             builder,
@@ -310,7 +272,7 @@ fn search_named_handler<'a>(
     {
         builder.switch_to_block(on_no_match);
         builder.set_cold_block(on_no_match);
-        builder.ins().trap(crate::TRAP_UNHANDLED_TAG);
+        builder.ins().trap(crate::TRAP_UNHANDLED_NAMED_OR_TAG);
     }
 
     builder.seal_block(handle_link);
@@ -339,10 +301,10 @@ fn search_named_handler<'a>(
 
 pub(crate) fn translate_resume_with<'a>(
     env: &mut crate::func_environ::FuncEnvironment<'a>,
-    builder: &mut FunctionBuilder,
+    state: &mut FuncTranslationState,
+    builder: &mut FunctionBuilder<'_>,
+    arity: usize,
     type_index: u32,
-    resume_contobj: ir::Value,
-    resume_args: &[ir::Value],
     resumetable: &[(u32, Option<ir::Block>)],
 ) -> WasmResult<Vec<ir::Value>> {
     // The resume instruction is the most involved instruction to
@@ -405,6 +367,8 @@ pub(crate) fn translate_resume_with<'a>(
         builder.switch_to_block(resume_block);
         builder.seal_block(resume_block);
 
+        let resume_contobj = state.pop1();
+
         let (witness, resume_contref) = shared::disassemble_contobj(env, builder, resume_contobj);
 
         let mut vmcontref = tc::VMContRef::new(resume_contref);
@@ -414,7 +378,7 @@ pub(crate) fn translate_resume_with<'a>(
         emit_debug_println!(
             env,
             builder,
-            "[resume] resume_contref = {:p} witness = {}, revision = {}, evidence = {}",
+            "[resume_with] resume_contref = {:p} witness = {}, revision = {}, evidence = {}",
             resume_contref,
             witness,
             revision,
@@ -424,7 +388,12 @@ pub(crate) fn translate_resume_with<'a>(
             .ins()
             .trapz(evidence, crate::TRAP_CONTINUATION_ALREADY_CONSUMED);
         let next_revision = vmcontref.incr_revision(env, builder, revision);
-        emit_debug_println!(env, builder, "[resume] new revision = {}", next_revision);
+        emit_debug_println!(
+            env,
+            builder,
+            "[resume_with] new revision = {}",
+            next_revision
+        );
 
         if cfg!(debug_assertions) {
             // This should be impossible due to the linearity check.
@@ -434,24 +403,29 @@ pub(crate) fn translate_resume_with<'a>(
             emit_debug_assert_eq!(env, builder, has_returned, zero);
         }
 
-        // Generate a new name (address of the vmcontref related to the handler):
-        let vmhandlerref = VMHandlerRef::new(vmcontref.address);
-        let mut resume_args_with_name = Vec::from(resume_args);
-        // TEMP resume_args_with_name.push(vmcontref.address);
+        state.push2(resume_contref, resume_contobj);
+        let (_, resume_args) = state.peekn(arity + 1).split_last().unwrap();
 
-        println!(
-            "named handler points to addr {:?}",
-            vmhandlerref.address.as_u32()
+        println!("[translate_resume_with]: resume_args are {:?}", resume_args);
+
+        println!("translate_resume_with: args are {:?}", resume_args);
+
+        // ishmis: use reivision to add just the right amount of padding
+        let count = builder.ins().iconst(I32, resume_args.len() as i64);
+        let rev_32 = vmcontref.get_revision_32(env, builder);
+        let ac_count = builder.ins().iadd(count, rev_32);
+
+        emit_debug_println!(
+            env,
+            builder,
+            "[translate_resume_with]: count is {}, ac_count is {}",
+            count,
+            ac_count
         );
-
-        // We store the arguments in the `VMContRef` to be resumed.
-        let count = builder
-            .ins()
-            .iconst(I32, resume_args_with_name.len() as i64);
 
         // ishmis:
         // current solution is to just use the vmcontref as the handler name directly
-        vmcontref_store_payloads(env, builder, &resume_args_with_name, count, resume_contref);
+        vmcontref_store_payloads(env, builder, &resume_args, ac_count, resume_contref);
 
         // Splice together stack chains:
         // Connect the end of the chain starting at `resume_contref` to the currently active chain.
@@ -472,7 +446,7 @@ pub(crate) fn translate_resume_with<'a>(
         emit_debug_println!(
             env,
             builder,
-            "[resume] spliced together stack chains: parent of {:p} (last ancestor of {:p}) is now pointing to ({}, {:p})",
+            "[resume_with] spliced together stack chains: parent of {:p} (last ancestor of {:p}) is now pointing to ({}, {:p})",
             last_ancestor.address,
             vmcontref.address,
             original_stack_chain.to_raw_parts()[0],
@@ -560,7 +534,7 @@ pub(crate) fn translate_resume_with<'a>(
         emit_debug_println!(
             env,
             builder,
-            "[resume] about to execute stack_switch, control_context_ptr is {:p}",
+            "[resume_with] about to execute stack_switch, control_context_ptr is {:p}",
             control_context_ptr
         );
 
@@ -572,7 +546,7 @@ pub(crate) fn translate_resume_with<'a>(
         emit_debug_println!(
             env,
             builder,
-            "[resume] continuing after stack_switch in frame with parent_stack_chain ({}, {:p}), result is {:p}",
+            "[resume_with] continuing after stack_switch in frame with parent_stack_chain ({}, {:p}), result is {:p}",
             original_stack_chain.to_raw_parts()[0],
             original_stack_chain.to_raw_parts()[1],
             result
@@ -599,7 +573,7 @@ pub(crate) fn translate_resume_with<'a>(
         emit_debug_println!(
             env,
             builder,
-            "[resume] in resume block, signal is {}",
+            "[resume_with] in resume block, signal is {}",
             signal
         );
 
@@ -650,7 +624,7 @@ pub(crate) fn translate_resume_with<'a>(
         emit_debug_println!(
             env,
             builder,
-            "[resume] in suspend block, handler index is {}, new continuation is {:p}, with existing revision {}",
+            "[resume_with] in suspend block, handler index is {}, new continuation is {:p}, with existing revision {}",
             handler_index,
             suspended_continuation.address,
             revision
@@ -760,6 +734,48 @@ pub(crate) fn translate_resume_with<'a>(
     }
 }
 
+/// Loads values of the given types from the continuation's `values` field.
+#[allow(clippy::cast_possible_truncation, reason = "TODO")]
+fn vmcontref_load_values_named<'a>(
+    env: &mut crate::func_environ::FuncEnvironment<'a>,
+    builder: &mut FunctionBuilder,
+    contref: ir::Value,
+    valtypes: &[WasmValType],
+) -> Vec<ir::Value> {
+    let memflags = ir::MemFlags::trusted();
+    let mut result = vec![];
+
+    if valtypes.len() > 0 {
+        let co = tc::VMContRef::new(contref);
+        let values = co.values();
+
+        let payload_ptr = values.get_data(env, builder);
+
+        let mut offset = 0;
+        for valtype in valtypes {
+            let val = builder.ins().load(
+                crate::value_type(env.isa, *valtype),
+                memflags,
+                payload_ptr,
+                offset,
+            );
+            result.push(val);
+            offset += env.offsets.ptr.maximum_value_size() as i32;
+        }
+
+        emit_debug_println!(
+            env,
+            builder,
+            "[vmcontref_load_values]: going to be clearing values!",
+        );
+    }
+
+    // ishmis: always clear?
+    tc::VMContRef::new(contref).values().clear(builder);
+
+    result
+}
+
 pub(crate) fn translate_suspend_to<'a>(
     env: &mut crate::func_environ::FuncEnvironment<'a>,
     builder: &mut FunctionBuilder,
@@ -769,12 +785,26 @@ pub(crate) fn translate_suspend_to<'a>(
     tag_return_types: &[WasmValType],
 ) -> Vec<ir::Value> {
     let vmhandlerref = tc::VMContRef::new(hdlobj);
-    emit_debug_println!(env, builder, "[suspend_to] suspending with name {:p}", hdlobj);
+    emit_debug_println!(
+        env,
+        builder,
+        "[suspend_to] suspending with name {:p}",
+        hdlobj
+    );
 
-    vmctx_store_payloads(env, builder, suspend_args);
+    // TODO(ishmis): do we store the (ref %ht) in the vmctx as well?? ->
+    let suspend_args_with_hdlref = Vec::from(suspend_args);
+    // suspend_args_with_hdlref.push(hdlobj);
+
+    vmctx_store_payloads(env, builder, &suspend_args_with_hdlref);
 
     let tag_addr = shared::tag_address(env, builder, tag_index);
-    emit_debug_println!(env, builder, "[suspend_to] suspending with tag {:p}", tag_addr);
+    emit_debug_println!(
+        env,
+        builder,
+        "[suspend_to] suspending with tag {:p}",
+        tag_addr
+    );
 
     let vmctx = env.vmctx_val(&mut builder.cursor());
     let vmctx = tc::VMContext::new(vmctx, env.pointer_type());
@@ -791,7 +821,7 @@ pub(crate) fn translate_suspend_to<'a>(
     emit_debug_println!(
         env,
         builder,
-        "[suspend] found handler: end of chain contref is {:p}, handler index is {}",
+        "[suspend_to] found handler: end of chain contref is {:p}, handler index is {}",
         end_of_chain_contref,
         handler_index
     );
@@ -832,7 +862,7 @@ pub(crate) fn translate_suspend_to<'a>(
         .stack_switch(control_context_ptr, control_context_ptr, suspend_payload);
 
     let mut return_values =
-        vmcontref_load_values(env, builder, active_contref.address, tag_return_types);
+        vmcontref_load_values_named(env, builder, active_contref.address, tag_return_types);
 
     // ishmis: put in "new" name
     return_values.push(hdlobj);

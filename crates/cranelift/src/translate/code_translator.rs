@@ -2862,6 +2862,10 @@ pub fn translate_operator(
         Operator::ContNew { cont_type_index } => {
             let arg_types = environ.continuation_arguments(*cont_type_index).to_vec();
             let result_types = environ.continuation_returns(*cont_type_index).to_vec();
+            println!(
+                "[contnew code_translator]: arg_types: {:?} and result_types: {:?}",
+                arg_types, result_types
+            );
             let r = state.pop1();
             let contobj =
                 environ.translate_cont_new(builder, state, r, &arg_types, &result_types)?;
@@ -3011,32 +3015,22 @@ pub fn translate_operator(
             }
 
             let arity = environ.continuation_arguments(*named_cont_type_index).len();
-
-            println!("got arity {}", arity);
-            let contobj = state.pop1();
-            // "name"
-            state.push1(contobj);
-            state.push1(contobj);
-            let (contobj, call_args) = state.peekn(arity + 1).split_last().unwrap();
-
-            println!("got resume call_args as {:?}", call_args);
-
+            println!("[translate_resume_with]: arity is {}", arity);
             // TODO(ishmis): we are giving the cont with ref handler + call_args, call_args wont have a name tho!
             // TODO(ishmis): assert cont args is at least 1-ary and has a (ref handler) type
             let cont_return_vals = environ.translate_resume_with(
+                state,
                 builder,
+                arity,
                 *named_cont_type_index,
-                *contobj,
-                call_args,
                 resumetable.as_slice(),
             )?;
-
             println!(
                 "resume_with: about to pop {}, stack has size {}",
                 arity + 1,
                 state.stack.len()
             );
-            state.popn(arity + 1); // arguments + continuation - handler name
+            state.popn(arity); // arguments + handler (continuation popped during translation)
             println!("resumewith return vals were: {:?}", cont_return_vals);
             state.pushn(&cont_return_vals);
 

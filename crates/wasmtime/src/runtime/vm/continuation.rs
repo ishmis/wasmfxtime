@@ -241,6 +241,11 @@ pub mod optimized {
     ) -> Result<*mut VMContRef, TrapReason> {
         let caller_vmctx = instance.vmctx();
 
+        println!(
+            "[cont.new in continuation.rs]: param_count is {}, result_count is {}",
+            param_count, result_count
+        );
+
         let capacity = cmp::max(param_count, result_count);
 
         let wasmfx_config = unsafe { &*(store.wasmfx_config()) };
@@ -263,6 +268,10 @@ pub mod optimized {
             csi.limits = limits;
             csi.state = State::Fresh;
             contref.parent_chain = StackChain::Absent;
+            println!(
+                "[cont.new in continuation.rs]: capacity ensured is {}",
+                capacity
+            );
             contref.args.ensure_capacity(capacity);
             // The continuation is fresh, which is a special case of being suspended.
             // Thus we need to set the correct end of the continuation chain: itself.

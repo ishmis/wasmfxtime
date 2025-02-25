@@ -864,7 +864,7 @@ impl WasmHandlerType {
     /// Constructs a new handler type.
     pub fn new(values: Box<[WasmValType]>) -> Self {
         WasmHandlerType { values }
-    } 
+    }
 }
 
 impl TypeTrace for WasmHandlerType {

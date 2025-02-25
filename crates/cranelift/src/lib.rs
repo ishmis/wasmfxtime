@@ -64,6 +64,8 @@ pub const TRAP_TABLE_OUT_OF_BOUNDS: TrapCode =
     TrapCode::unwrap_user(Trap::TableOutOfBounds as u8 + TRAP_OFFSET);
 pub const TRAP_UNHANDLED_TAG: TrapCode =
     TrapCode::unwrap_user(Trap::UnhandledTag as u8 + TRAP_OFFSET);
+pub const TRAP_UNHANDLED_NAMED_OR_TAG: TrapCode =
+    TrapCode::unwrap_user(Trap::UnhandledNameOrTag as u8 + TRAP_OFFSET);
 pub const TRAP_CONTINUATION_ALREADY_CONSUMED: TrapCode =
     TrapCode::unwrap_user(Trap::ContinuationAlreadyConsumed as u8 + TRAP_OFFSET);
 pub const TRAP_DEBUG_ASSERTION: TrapCode =

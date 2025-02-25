@@ -304,7 +304,7 @@ pub(crate) mod typed_continuation_helpers {
         pub address: ir::Value,
     }
 
-    #[derive(Copy, Clone)]
+    #[derive(Copy, Clone, Debug)]
     pub struct Vector<T> {
         /// Base address of this object, which must be shifted by `offset` below.
         base: ir::Value,
@@ -467,6 +467,20 @@ pub(crate) mod typed_continuation_helpers {
             revision
         }
 
+        /// Gets the revision counter the a given continuation
+        /// reference.
+        #[allow(clippy::cast_possible_truncation, reason = "TODO")]
+        pub fn get_revision_32<'a>(
+            &mut self,
+            _env: &mut crate::func_environ::FuncEnvironment<'a>,
+            builder: &mut FunctionBuilder,
+        ) -> ir::Value {
+            let mem_flags = ir::MemFlags::trusted();
+            let offset = wasmtime_continuations::offsets::vm_cont_ref::REVISION as i32;
+            let revision = builder.ins().load(I32, mem_flags, self.address, offset);
+            revision
+        }
+
         /// Sets the revision counter on the given continuation
         /// reference to `revision + 1`.
         #[allow(clippy::cast_possible_truncation, reason = "TODO")]
@@ -619,6 +633,13 @@ pub(crate) mod typed_continuation_helpers {
             let data = self.get_data(env, builder);
             let original_length = self.get_length(env, builder);
             let new_length = builder.ins().iadd_imm(original_length, arg_count as i64);
+            emit_debug_println!(
+                env,
+                builder,
+                "[occupy_next_slots]: original_length is {} and new_length is {}",
+                original_length,
+                new_length
+            );
             self.set_length(builder, new_length);
 
             if cfg!(debug_assertions) {
@@ -684,6 +705,14 @@ pub(crate) mod typed_continuation_helpers {
                 builder
                     .ins()
                     .icmp(IntCC::UnsignedLessThanOrEqual, required_capacity, capacity);
+
+            emit_debug_println!(
+                env,
+                builder,
+                "[ensure_capacity]: req: {}, curr cap: {}",
+                required_capacity,
+                capacity
+            );
 
             builder.ins().brif(
                 big_enough,
@@ -1450,6 +1479,12 @@ pub(crate) fn vmcontref_load_values<'a>(
             offset += env.offsets.ptr.maximum_value_size() as i32;
         }
 
+        emit_debug_println!(
+            env,
+            builder,
+            "[vmcontref_load_values]: going to be clearing values!",
+        );
+
         // In theory, we way want to deallocate the buffer instead of just
         // clearing it if its size is above a certain threshold. That would
         // avoid keeping a large object unnecessarily long.
@@ -1488,6 +1523,13 @@ pub(crate) fn vmcontref_store_payloads<'a>(
             builder.seal_block(use_args_block);
 
             let args = co.args();
+            emit_debug_println!(
+                env,
+                builder,
+                "[vmcontref_store_payloads (args)]: occupying slots for the first time at contref_addr: {:p}",
+                co.address
+            );
+            println!("occupying {} slots", values.len());
             let ptr = args.occupy_next_slots(env, builder, values.len() as i32);
 
             builder.ins().jump(store_data_block, &[ptr]);
@@ -1498,6 +1540,22 @@ pub(crate) fn vmcontref_store_payloads<'a>(
             builder.seal_block(use_payloads_block);
 
             let payloads = co.values();
+
+            let len = payloads.get_length(env, builder);
+
+            // let remaining_arg_count_and_name = builder.ins().iadd_imm(remaining_arg_count, 1);
+            emit_debug_println!(
+                env,
+                builder,
+                "[vmcontref_store_payloads (values)]: payloads size before anything {}",
+                len
+            );
+            emit_debug_println!(
+                env,
+                builder,
+                "[vmcontref_store_payloads (values)]: remaining_arg_count of {}",
+                remaining_arg_count
+            );
 
             // Unlike for the args buffer (where we know the maximum
             // required capacity at the time of creation of the
@@ -1542,6 +1600,7 @@ pub(crate) fn vmctx_store_payloads<'a>(
         );
 
         let nargs = builder.ins().iconst(I32, values.len() as i64);
+        println!("[store_payloads]: storing {:?}", values);
         payloads.ensure_capacity(env, builder, nargs);
 
         payloads.store_data_entries(env, builder, values, true);

@@ -3325,24 +3325,31 @@ impl FuncEnvironment<'_> {
 
     pub fn translate_resume_with(
         &mut self,
+        state: &mut FuncTranslationState,
         builder: &mut FunctionBuilder<'_>,
+        arity: usize,
         type_index: u32,
-        contobj: ir::Value,
-        resume_args: &[ir::Value],
         resumetable: &[(u32, Option<ir::Block>)],
     ) -> WasmResult<Vec<ir::Value>> {
-        named::translate_resume_with(self, builder, type_index, contobj, resume_args, resumetable)
+        named::translate_resume_with(self, state, builder, arity, type_index, resumetable)
     }
 
     pub fn translate_suspend_to(
         &mut self,
         builder: &mut FunctionBuilder<'_>,
         tag_index: u32,
-        hdlobj: ir::Value, 
+        hdlobj: ir::Value,
         suspend_args: &[ir::Value],
         tag_return_types: &[WasmValType],
     ) -> Vec<ir::Value> {
-        named::translate_suspend_to(self, builder, tag_index, hdlobj, suspend_args, tag_return_types)
+        named::translate_suspend_to(
+            self,
+            builder,
+            tag_index,
+            hdlobj,
+            suspend_args,
+            tag_return_types,
+        )
     }
 
     pub fn continuation_arguments(&self, index: u32) -> &[WasmValType] {

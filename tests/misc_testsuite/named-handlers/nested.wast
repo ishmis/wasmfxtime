@@ -1,4 +1,4 @@
-
+;;! stack_switching = true
 (module
   (type $ht (handler))
 

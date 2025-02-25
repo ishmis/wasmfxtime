@@ -92,6 +92,9 @@ pub enum Trap {
     /// We are suspending to a tag for which there is no active handler.
     UnhandledTag,
 
+    /// We are suspending to a name which does not exist or a tag for which there is no active handler.
+    UnhandledNameOrTag,
+
     /// Attempt to resume a continuation twice.
     ContinuationAlreadyConsumed,
 
@@ -133,6 +136,7 @@ impl Trap {
             CastFailure
             CannotEnterComponent
             UnhandledTag
+            UnhandledNameOrTag
             ContinuationAlreadyConsumed
             DebugAssertion
         }
@@ -166,6 +170,7 @@ impl fmt::Display for Trap {
             CastFailure => "cast failure",
             CannotEnterComponent => "cannot enter component instance",
             UnhandledTag => "unhandled tag",
+            UnhandledNameOrTag => "unhandled name or tag",
             ContinuationAlreadyConsumed => "continuation already consumed",
             DebugAssertion => "triggered debug assertion",
         };

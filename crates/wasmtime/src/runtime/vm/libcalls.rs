@@ -1558,6 +1558,8 @@ fn tc_baseline_resume(store: &mut dyn VMStore, instance: &mut Instance, contref:
     }
 }
 
+// TODO(ishmis): may need to add libcalls here!
+
 fn tc_baseline_suspend(
     _store: &mut dyn VMStore,
     instance: &mut Instance,

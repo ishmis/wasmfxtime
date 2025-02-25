@@ -28,19 +28,19 @@
 (assert_return (invoke "handled_proper"))
 
 
-;; (module
-;;   (type $ht (handler (i32 i64 f32 f64)))
-;;   (type $ft (func (param (ref $ht))))
-;;   (type $ct (cont $ft))
+(module
+  (type $ht (handler (result i32 i64 f32 f64)))
+  (type $ft (func (param (ref $ht))))
+  (type $ct (cont $ft))
 
-;;   (func $noop (type $ft))
-;;   (elem declare func $noop)
+  (func $noop (type $ft))
+  (elem declare func $noop)
 
-;;   (func $make-cont (result (ref $ct))
-;;      (cont.new $ct (ref.func $noop)))
+  (func $make-cont (result (ref $ct))
+     (cont.new $ct (ref.func $noop)))
 
-;;   (func $f (export "f") (result i32)
-;;      (call $make-cont)
-;;      (ref.is_null))
-;; )
-;; (assert_return (invoke "f") (i32.const 0))
+  (func $f (export "f") (result i32)
+     (call $make-cont)
+     (ref.is_null))
+)
+(assert_return (invoke "f") (i32.const 0))
