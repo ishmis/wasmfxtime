@@ -25,7 +25,7 @@ pub const INITIAL_HANDLER_LIST_CAPACITY: usize = 4;
 
 /// TODO
 #[allow(dead_code)]
-pub const ENABLE_DEBUG_PRINTING: bool = true;
+pub const ENABLE_DEBUG_PRINTING: bool = false;
 
 #[macro_export]
 macro_rules! debug_println {

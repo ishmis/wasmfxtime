@@ -406,10 +406,6 @@ pub(crate) fn translate_resume_with<'a>(
         state.push2(resume_contref, resume_contobj);
         let (_, resume_args) = state.peekn(arity + 1).split_last().unwrap();
 
-        println!("[translate_resume_with]: resume_args are {:?}", resume_args);
-
-        println!("translate_resume_with: args are {:?}", resume_args);
-
         // ishmis: use reivision to add just the right amount of padding
         let count = builder.ins().iconst(I32, resume_args.len() as i64);
         let rev_32 = vmcontref.get_revision_32(env, builder);
@@ -687,8 +683,6 @@ pub(crate) fn translate_resume_with<'a>(
             .map(|b| builder.func.dfg.block_call(*b, &[]))
             .collect();
 
-        // TODO(ishmis): see if anything breaks here?
-
         let jt_data = JumpTableData::new(default_bc, &adapter_bcs);
         let jt = builder.create_jump_table(jt_data);
 
@@ -792,11 +786,7 @@ pub(crate) fn translate_suspend_to<'a>(
         hdlobj
     );
 
-    // TODO(ishmis): do we store the (ref %ht) in the vmctx as well?? ->
-    let suspend_args_with_hdlref = Vec::from(suspend_args);
-    // suspend_args_with_hdlref.push(hdlobj);
-
-    vmctx_store_payloads(env, builder, &suspend_args_with_hdlref);
+    vmctx_store_payloads(env, builder, suspend_args);
 
     let tag_addr = shared::tag_address(env, builder, tag_index);
     emit_debug_println!(
@@ -864,7 +854,7 @@ pub(crate) fn translate_suspend_to<'a>(
     let mut return_values =
         vmcontref_load_values_named(env, builder, active_contref.address, tag_return_types);
 
-    // ishmis: put in "new" name
+    // ishmis: return name too
     return_values.push(hdlobj);
 
     return_values

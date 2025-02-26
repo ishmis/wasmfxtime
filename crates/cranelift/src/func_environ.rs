@@ -1793,7 +1793,7 @@ impl FuncEnvironment<'_> {
         } else {
             debug_assert!(matches!(
                 ty.top(),
-                WasmHeapTopType::Func | WasmHeapTopType::Cont
+                WasmHeapTopType::Func | WasmHeapTopType::Cont | WasmHeapTopType::Handler
             ));
             match ty.top() {
                 WasmHeapTopType::Func => {
@@ -1807,6 +1807,11 @@ impl FuncEnvironment<'_> {
                     args.extend_from_slice(&[contref, revision]);
                     self.builtin_functions
                         .table_grow_cont_obj(&mut builder.func)
+                }
+                WasmHeapTopType::Handler => {
+                    args.push(init_value);
+                    self.builtin_functions
+                        .table_grow_handler_obj(&mut builder.func)
                 }
 
                 _ => panic!("unsupported table type."),
@@ -1854,8 +1859,10 @@ impl FuncEnvironment<'_> {
             }
             // Handler types.
             WasmHeapTopType::Handler => {
-                // TODO(ishmis): do this!
-                todo!()
+                let (table_entry_addr, flags) = table_data.prepare_table_addr(self, builder, index);
+                Ok(builder
+                    .ins()
+                    .load(self.pointer_type(), flags, table_entry_addr, 0))
             }
             // Function types.
             WasmHeapTopType::Func => {
@@ -1916,8 +1923,9 @@ impl FuncEnvironment<'_> {
             }
             // Handler types.
             WasmHeapTopType::Handler => {
-                // TODO(ishmis)
-                todo!()
+                let (elem_addr, flags) = table_data.prepare_table_addr(self, builder, index);
+                builder.ins().store(flags, value, elem_addr, 0);
+                Ok(())
             }
         }
     }
@@ -1954,6 +1962,11 @@ impl FuncEnvironment<'_> {
                     args.extend_from_slice(&[contref, revision]);
                     self.builtin_functions
                         .table_fill_cont_obj(&mut builder.func)
+                }
+                WasmHeapTopType::Handler => {
+                    args.push(val);
+                    self.builtin_functions
+                        .table_fill_handler_obj(&mut builder.func)
                 }
                 _ => panic!("unsupported table type"),
             }
@@ -2319,10 +2332,7 @@ impl FuncEnvironment<'_> {
                 // TODO do this nicer
                 wasmfx_impl::assemble_contobj(self, builder, zero, zero)
             }
-            WasmHeapTopType::Handler => {
-                // TODO(ishmis)
-                todo!()
-            }
+            WasmHeapTopType::Handler => builder.ins().iconst(self.pointer_type(), 0),
         })
     }
 
@@ -3368,8 +3378,7 @@ impl FuncEnvironment<'_> {
 
     pub fn named_handler(&self, hdl_index: u32) {
         let idx = self.module.types[TypeIndex::from_u32(hdl_index)];
-        let bruh = self.types[idx].unwrap_handler();
-        println!("i got the handler {:?}", bruh);
+        let _ = self.types[idx].unwrap_handler();
     }
 
     pub fn tag_params(&self, tag_index: u32) -> &[WasmValType] {

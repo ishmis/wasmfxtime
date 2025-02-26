@@ -1529,7 +1529,6 @@ pub(crate) fn vmcontref_store_payloads<'a>(
                 "[vmcontref_store_payloads (args)]: occupying slots for the first time at contref_addr: {:p}",
                 co.address
             );
-            println!("occupying {} slots", values.len());
             let ptr = args.occupy_next_slots(env, builder, values.len() as i32);
 
             builder.ins().jump(store_data_block, &[ptr]);
@@ -1600,7 +1599,6 @@ pub(crate) fn vmctx_store_payloads<'a>(
         );
 
         let nargs = builder.ins().iconst(I32, values.len() as i64);
-        println!("[store_payloads]: storing {:?}", values);
         payloads.ensure_capacity(env, builder, nargs);
 
         payloads.store_data_entries(env, builder, values, true);

@@ -6,6 +6,7 @@
 
 use crate::prelude::*;
 use crate::runtime::vm::continuation::VMContObj;
+use crate::runtime::vm::named::VMHandlerObj;
 use crate::runtime::vm::vmcontext::{VMFuncRef, VMTableDefinition};
 use crate::runtime::vm::{GcStore, SendSyncPtr, VMGcRef, VMStore};
 use core::ops::Range;
@@ -37,8 +38,8 @@ pub enum TableElement {
     /// A `contref`
     ContRef(Option<VMContObj>),
 
-    /// A `handlerref` -> TODO(ishmis): make a VMHandlerObj!!
-    HandlerRef(Option<VMContObj>),
+    /// A `handlerref`
+    HandlerRef(Option<VMHandlerObj>),
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -66,8 +67,7 @@ impl TableElementType {
             TableElementType::Func => core::mem::size_of::<FuncTableElem>(),
             TableElementType::GcRef => core::mem::size_of::<Option<VMGcRef>>(),
             TableElementType::Cont => core::mem::size_of::<ContTableElem>(),
-            // TODO(ishmis)
-            TableElementType::Handler => todo!("Handler not impl element_size"),
+            TableElementType::Handler => core::mem::size_of::<NameTableElem>(),
         }
     }
 }
@@ -139,6 +139,18 @@ impl From<VMContObj> for TableElement {
     }
 }
 
+impl From<Option<VMHandlerObj>> for TableElement {
+    fn from(c: Option<VMHandlerObj>) -> TableElement {
+        TableElement::HandlerRef(c)
+    }
+}
+
+impl From<VMHandlerObj> for TableElement {
+    fn from(c: VMHandlerObj) -> TableElement {
+        TableElement::HandlerRef(Some(c))
+    }
+}
+
 #[derive(Copy, Clone)]
 #[repr(transparent)]
 struct TaggedFuncRef(*mut VMFuncRef);
@@ -175,12 +187,14 @@ impl TaggedFuncRef {
 
 pub type FuncTableElem = Option<SendSyncPtr<VMFuncRef>>;
 pub type ContTableElem = Option<VMContObj>;
+pub type NameTableElem = Option<VMHandlerObj>;
 
 /// The maximum of the sizes of any of the table element types
 pub const MAX_TABLE_ELEM_SIZE: usize = {
     let sizes = [
         core::mem::size_of::<FuncTableElem>(),
         core::mem::size_of::<ContTableElem>(),
+        core::mem::size_of::<NameTableElem>(),
         core::mem::size_of::<Option<VMGcRef>>(),
     ];
 
@@ -207,6 +221,7 @@ pub enum StaticTable {
     Func(StaticFuncTable),
     GcRef(StaticGcRefTable),
     Cont(StaticContTable),
+    Handler(StaticNameTable),
 }
 
 impl From<StaticFuncTable> for StaticTable {
@@ -224,6 +239,12 @@ impl From<StaticGcRefTable> for StaticTable {
 impl From<StaticContTable> for StaticTable {
     fn from(value: StaticContTable) -> Self {
         Self::Cont(value)
+    }
+}
+
+impl From<StaticNameTable> for StaticTable {
+    fn from(value: StaticNameTable) -> Self {
+        Self::Handler(value)
     }
 }
 
@@ -253,10 +274,19 @@ pub struct StaticContTable {
     size: usize,
 }
 
+pub struct StaticNameTable {
+    /// Where data for this table is stored. The length of this list is the
+    /// maximum size of the table.
+    data: SendSyncPtr<[NameTableElem]>,
+    /// The current size of the table.
+    size: usize,
+}
+
 pub enum DynamicTable {
     Func(DynamicFuncTable),
     GcRef(DynamicGcRefTable),
     Cont(DynamicContTable),
+    Handler(DynamicNameTable),
 }
 
 impl From<DynamicFuncTable> for DynamicTable {
@@ -274,6 +304,12 @@ impl From<DynamicGcRefTable> for DynamicTable {
 impl From<DynamicContTable> for DynamicTable {
     fn from(value: DynamicContTable) -> Self {
         Self::Cont(value)
+    }
+}
+
+impl From<DynamicNameTable> for DynamicTable {
+    fn from(value: DynamicNameTable) -> Self {
+        Self::Handler(value)
     }
 }
 
@@ -299,6 +335,14 @@ pub struct DynamicContTable {
     /// Dynamically managed storage space for this table. The length of this
     /// vector is the current size of the table.
     elements: Vec<ContTableElem>,
+    /// Maximum size that `elements` can grow to.
+    maximum: Option<usize>,
+}
+
+pub struct DynamicNameTable {
+    /// Dynamically managed storage space for this table. The length of this
+    /// vector is the current size of the table.
+    elements: Vec<NameTableElem>,
     /// Maximum size that `elements` can grow to.
     maximum: Option<usize>,
 }
@@ -340,6 +384,13 @@ impl From<StaticContTable> for Table {
     }
 }
 
+impl From<StaticNameTable> for Table {
+    fn from(value: StaticNameTable) -> Self {
+        let t: StaticTable = value.into();
+        t.into()
+    }
+}
+
 impl From<DynamicTable> for Table {
     fn from(value: DynamicTable) -> Self {
         Self::Dynamic(value)
@@ -362,6 +413,13 @@ impl From<DynamicGcRefTable> for Table {
 
 impl From<DynamicContTable> for Table {
     fn from(value: DynamicContTable) -> Self {
+        let t: DynamicTable = value.into();
+        t.into()
+    }
+}
+
+impl From<DynamicNameTable> for Table {
+    fn from(value: DynamicNameTable) -> Self {
         let t: DynamicTable = value.into();
         t.into()
     }
@@ -398,8 +456,10 @@ impl Table {
                 elements: vec![None; minimum],
                 maximum: maximum,
             })),
-            // TODO(ishmis)
-            TableElementType::Handler => todo!("handler not impl wasm_to_table_type"),
+            TableElementType::Handler => Ok(Self::from(DynamicNameTable {
+                elements: vec![None; minimum],
+                maximum: maximum,
+            })),
         }
     }
 
@@ -479,8 +539,26 @@ impl Table {
                 ));
                 Ok(Self::from(StaticContTable { data, size }))
             }
-            // TODO(ishmis)
-            TableElementType::Handler => todo!("handler not impl new_static"),
+            TableElementType::Handler => {
+                let len = {
+                    let data = data.as_non_null().as_ref();
+                    let (before, data, after) = data.align_to::<NameTableElem>();
+                    assert!(before.is_empty());
+                    assert!(after.is_empty());
+                    data.len()
+                };
+                ensure!(
+                    usize::try_from(ty.limits.min).unwrap() <= len,
+                    "initial table size of {} exceeds the pooling allocator's \
+                     configured maximum table size of {len} elements",
+                    ty.limits.min,
+                );
+                let data = SendSyncPtr::new(NonNull::slice_from_raw_parts(
+                    data.as_non_null().cast::<NameTableElem>(),
+                    cmp::min(len, max),
+                ));
+                Ok(Self::from(StaticNameTable { data, size }))
+            }
         }
     }
 
@@ -540,6 +618,9 @@ impl Table {
             Table::Static(StaticTable::Cont(_)) | Table::Dynamic(DynamicTable::Cont(_)) => {
                 TableElementType::Cont
             }
+            Table::Static(StaticTable::Handler(_)) | Table::Dynamic(DynamicTable::Handler(_)) => {
+                TableElementType::Handler
+            }
         }
     }
 
@@ -555,11 +636,15 @@ impl Table {
             Table::Static(StaticTable::Func(StaticFuncTable { size, .. })) => *size,
             Table::Static(StaticTable::GcRef(StaticGcRefTable { size, .. })) => *size,
             Table::Static(StaticTable::Cont(StaticContTable { size, .. })) => *size,
+            Table::Static(StaticTable::Handler(StaticNameTable { size, .. })) => *size,
             Table::Dynamic(DynamicTable::Func(DynamicFuncTable { elements, .. })) => elements.len(),
             Table::Dynamic(DynamicTable::GcRef(DynamicGcRefTable { elements, .. })) => {
                 elements.len()
             }
             Table::Dynamic(DynamicTable::Cont(DynamicContTable { elements, .. })) => elements.len(),
+            Table::Dynamic(DynamicTable::Handler(DynamicNameTable { elements, .. })) => {
+                elements.len()
+            }
         }
     }
 
@@ -572,11 +657,13 @@ impl Table {
     pub fn maximum(&self) -> Option<usize> {
         match self {
             Table::Static(StaticTable::Cont(StaticContTable { data, .. })) => Some(data.len()),
+            Table::Static(StaticTable::Handler(StaticNameTable { data, .. })) => Some(data.len()),
             Table::Static(StaticTable::Func(StaticFuncTable { data, .. })) => Some(data.len()),
             Table::Static(StaticTable::GcRef(StaticGcRefTable { data, .. })) => Some(data.len()),
             Table::Dynamic(DynamicTable::Func(DynamicFuncTable { maximum, .. })) => *maximum,
             Table::Dynamic(DynamicTable::GcRef(DynamicGcRefTable { maximum, .. })) => *maximum,
             Table::Dynamic(DynamicTable::Cont(DynamicContTable { maximum, .. })) => *maximum,
+            Table::Dynamic(DynamicTable::Handler(DynamicNameTable { maximum, .. })) => *maximum,
         }
     }
 
@@ -679,8 +766,10 @@ impl Table {
                 let contrefs = self.contrefs_mut();
                 contrefs[start..end].fill(c);
             }
-            // TODO(ishmis)
-            TableElement::HandlerRef(_vmhdl_obj) => todo!("handler not impl fill"),
+            TableElement::HandlerRef(h) => {
+                let hdlrefs = self.handlerrefs_mut();
+                hdlrefs[start..end].fill(h);
+            }
         }
 
         Ok(())
@@ -767,6 +856,12 @@ impl Table {
                 }
                 *size = new_size;
             }
+            Table::Static(StaticTable::Handler(StaticNameTable { data, size })) => {
+                unsafe {
+                    debug_assert!(data.as_ref()[*size..new_size].iter().all(|x| x.is_none()));
+                }
+                *size = new_size;
+            }
 
             // These calls to `resize` could move the base address of
             // `elements`. If this table's limits declare it to be fixed-size,
@@ -782,6 +877,9 @@ impl Table {
                 elements.resize_with(usize::try_from(new_size).unwrap(), || None);
             }
             Table::Dynamic(DynamicTable::Cont(DynamicContTable { elements, .. })) => {
+                elements.resize(usize::try_from(new_size).unwrap(), None);
+            }
+            Table::Dynamic(DynamicTable::Handler(DynamicNameTable { elements, .. })) => {
                 elements.resize(usize::try_from(new_size).unwrap(), None);
             }
         }
@@ -821,8 +919,11 @@ impl Table {
                 .get(index)
                 .copied()
                 .map(|e| TableElement::ContRef(e)),
-            // TODO(ishmis)
-            TableElementType::Handler => todo!("handler not impl get"),
+            TableElementType::Handler => self
+                .handlerrefs()
+                .get(index)
+                .copied()
+                .map(|e| TableElement::HandlerRef(e)),
         }
     }
 
@@ -853,8 +954,9 @@ impl Table {
             TableElement::ContRef(c) => {
                 *self.contrefs_mut().get_mut(index).ok_or(())? = c;
             }
-            // TODO(ishmis)
-            TableElement::HandlerRef(_vmhdl_obj) => todo!("handler not impl set"),
+            TableElement::HandlerRef(h) => {
+                *self.handlerrefs_mut().get_mut(index).ok_or(())? = h;
+            }
         }
         Ok(())
     }
@@ -926,6 +1028,12 @@ impl Table {
                 base: data.as_ptr().cast(),
                 current_elements: *size,
             },
+            Table::Static(StaticTable::Handler(StaticNameTable { data, size })) => {
+                VMTableDefinition {
+                    base: data.as_ptr().cast(),
+                    current_elements: *size,
+                }
+            }
             Table::Dynamic(DynamicTable::Func(DynamicFuncTable { elements, .. })) => {
                 VMTableDefinition {
                     base: elements.as_mut_ptr().cast(),
@@ -939,6 +1047,12 @@ impl Table {
                 }
             }
             Table::Dynamic(DynamicTable::Cont(DynamicContTable { elements, .. })) => {
+                VMTableDefinition {
+                    base: elements.as_mut_ptr().cast(),
+                    current_elements: elements.len().try_into().unwrap(),
+                }
+            }
+            Table::Dynamic(DynamicTable::Handler(DynamicNameTable { elements, .. })) => {
                 VMTableDefinition {
                     base: elements.as_mut_ptr().cast(),
                     current_elements: elements.len().try_into().unwrap(),
@@ -1038,6 +1152,32 @@ impl Table {
         }
     }
 
+    fn handlerrefs(&self) -> &[Option<VMHandlerObj>] {
+        assert_eq!(self.element_type(), TableElementType::Handler);
+        match self {
+            Self::Dynamic(DynamicTable::Handler(DynamicNameTable { elements, .. })) => unsafe {
+                slice::from_raw_parts(elements.as_ptr().cast(), elements.len())
+            },
+            Self::Static(StaticTable::Handler(StaticNameTable { data, size })) => unsafe {
+                slice::from_raw_parts(data.as_ptr().cast(), usize::try_from(*size).unwrap())
+            },
+            _ => unreachable!(),
+        }
+    }
+
+    fn handlerrefs_mut(&mut self) -> &mut [Option<VMHandlerObj>] {
+        assert_eq!(self.element_type(), TableElementType::Handler);
+        match self {
+            Self::Dynamic(DynamicTable::Handler(DynamicNameTable { elements, .. })) => unsafe {
+                slice::from_raw_parts_mut(elements.as_mut_ptr().cast(), elements.len())
+            },
+            Self::Static(StaticTable::Handler(StaticNameTable { data, size })) => unsafe {
+                slice::from_raw_parts_mut(data.as_ptr().cast(), usize::try_from(*size).unwrap())
+            },
+            _ => unreachable!(),
+        }
+    }
+
     /// Get this table's GC references as a slice.
     ///
     /// Panics if this is not a table of GC references.
@@ -1091,8 +1231,11 @@ impl Table {
                 dst_table.contrefs_mut()[dst_range]
                     .copy_from_slice(&src_table.contrefs()[src_range]);
             }
-            // TODO(ishmis)
-            TableElementType::Handler => todo!("handler not impl copy_elements"),
+            TableElementType::Handler => {
+                // `handlerref` are `Copy`, so just do a mempcy
+                dst_table.handlerrefs_mut()[dst_range]
+                    .copy_from_slice(&src_table.handlerrefs()[src_range]);
+            }
         }
     }
 
@@ -1145,8 +1288,11 @@ impl Table {
                 // `contref` are `Copy`, so just do a memmove
                 self.contrefs_mut().copy_within(src_range, dst_range.start);
             }
-            // TODO(ishmis)
-            TableElementType::Handler => todo!("handler not impl copy_elements_within"),
+            TableElementType::Handler => {
+                // `handlerref` are `Copy`, so just do a memmove
+                self.handlerrefs_mut()
+                    .copy_within(src_range, dst_range.start);
+            }
         }
     }
 }

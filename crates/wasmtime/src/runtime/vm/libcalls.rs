@@ -56,6 +56,7 @@
 
 use super::continuation::imp::VMContRef;
 use super::continuation::VMContObj;
+use super::named::VMHandlerObj;
 use crate::prelude::*;
 use crate::runtime::vm::table::{Table, TableElementType};
 use crate::runtime::vm::vmcontext::VMFuncRef;
@@ -371,7 +372,60 @@ unsafe fn table_fill_cont_obj(
     }
 }
 
-// TODO(ishmis): ^^ but handler
+unsafe fn table_grow_handler_obj(
+    store: &mut dyn VMStore,
+    instance: &mut Instance,
+    table_index: u32,
+    delta: u64,
+    init_value: *mut u8,
+) -> Result<Option<AllocationSize>> {
+    let table_index = TableIndex::from_u32(table_index);
+
+    let element = match instance.table_element_type(table_index) {
+        TableElementType::Func => unreachable!(),
+        TableElementType::GcRef => unreachable!(),
+        TableElementType::Cont => unreachable!(),
+        TableElementType::Handler => {
+            if init_value.is_null() {
+                None
+            } else {
+                Some(VMHandlerObj::new(NonNull::new_unchecked(
+                    init_value.cast::<VMContRef>(),
+                )))
+            }
+        }
+    };
+
+    let result = instance
+        .table_grow(store, table_index, delta, element.into())?
+        .map(AllocationSize);
+    Ok(result)
+}
+
+unsafe fn table_fill_handler_obj(
+    store: &mut dyn VMStore,
+    instance: &mut Instance,
+    table_index: u32,
+    dst: u64,
+    val: *mut u8,
+    len: u64,
+) -> Result<()> {
+    let table_index = TableIndex::from_u32(table_index);
+    let table = &mut *instance.get_table(table_index);
+    match table.element_type() {
+        TableElementType::Func => unreachable!(),
+        TableElementType::GcRef => unreachable!(),
+        TableElementType::Cont => unreachable!(),
+        TableElementType::Handler => {
+            if val.is_null() {
+                bail!("table fill handler ref has a null value!");
+            }
+            let val = VMHandlerObj::new(NonNull::new_unchecked(val.cast::<VMContRef>()));
+            table.fill(store.optional_gc_store_mut()?, dst, val.into(), len)?;
+            Ok(())
+        }
+    }
+}
 
 // Implementation of `table.copy`.
 unsafe fn table_copy(
@@ -1557,8 +1611,6 @@ fn tc_baseline_resume(store: &mut dyn VMStore, instance: &mut Instance, contref:
         Ok(x) => x,
     }
 }
-
-// TODO(ishmis): may need to add libcalls here!
 
 fn tc_baseline_suspend(
     _store: &mut dyn VMStore,

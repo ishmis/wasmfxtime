@@ -2862,10 +2862,6 @@ pub fn translate_operator(
         Operator::ContNew { cont_type_index } => {
             let arg_types = environ.continuation_arguments(*cont_type_index).to_vec();
             let result_types = environ.continuation_returns(*cont_type_index).to_vec();
-            println!(
-                "[contnew code_translator]: arg_types: {:?} and result_types: {:?}",
-                arg_types, result_types
-            );
             let r = state.pop1();
             let contobj =
                 environ.translate_cont_new(builder, state, r, &arg_types, &result_types)?;
@@ -2894,18 +2890,10 @@ pub fn translate_operator(
             let params = state.peekn(param_types.len());
             let param_count = params.len();
 
-            println!(
-                "SUSPEND: tag params: {:?}\ntag return_types: {:?}",
-                param_types, return_types
-            );
-
-            println!("SUSPEND: params are {:?}", params);
-
             let return_values =
                 environ.translate_suspend(builder, *tag_index, params, &return_types);
 
             state.popn(param_count);
-            println!("SUSPEND: return values are  {:?}", return_values);
             state.pushn(&return_values);
         }
         Operator::Resume {
@@ -2932,8 +2920,6 @@ pub fn translate_operator(
             let arity = environ.continuation_arguments(*cont_type_index).len();
             let (contobj, call_args) = state.peekn(arity + 1).split_last().unwrap();
 
-            println!("RESUME: got resume call_args as {:?}", call_args);
-
             let cont_return_vals = environ.translate_resume(
                 builder,
                 *cont_type_index,
@@ -2943,7 +2929,6 @@ pub fn translate_operator(
             )?;
 
             state.popn(arity + 1); // arguments + continuation
-            println!("RESUME: got cont return vals as: {:?}", cont_return_vals);
             state.pushn(&cont_return_vals);
         }
         Operator::ResumeThrow {
@@ -2992,7 +2977,6 @@ pub fn translate_operator(
             state.popn(arity);
             state.pushn(&switch_return_values)
         }
-        // TODO(ishmis): fix these
         Operator::ResumeWith {
             named_cont_type_index,
             resume_table,
@@ -3015,9 +2999,6 @@ pub fn translate_operator(
             }
 
             let arity = environ.continuation_arguments(*named_cont_type_index).len();
-            println!("[translate_resume_with]: arity is {}", arity);
-            // TODO(ishmis): we are giving the cont with ref handler + call_args, call_args wont have a name tho!
-            // TODO(ishmis): assert cont args is at least 1-ary and has a (ref handler) type
             let cont_return_vals = environ.translate_resume_with(
                 state,
                 builder,
@@ -3025,16 +3006,8 @@ pub fn translate_operator(
                 *named_cont_type_index,
                 resumetable.as_slice(),
             )?;
-            println!(
-                "resume_with: about to pop {}, stack has size {}",
-                arity + 1,
-                state.stack.len()
-            );
             state.popn(arity); // arguments + handler (continuation popped during translation)
-            println!("resumewith return vals were: {:?}", cont_return_vals);
             state.pushn(&cont_return_vals);
-
-            println!("finished handling resumeWith");
         }
         Operator::SuspendTo {
             handler_type_index,
@@ -3042,23 +3015,10 @@ pub fn translate_operator(
         } => {
             environ.named_handler(*handler_type_index);
 
-            // TODO(ishmis): get handler and check that the name matches!
             let tag_param_types = environ.tag_params(*tag_index).to_vec();
             let return_types = environ.tag_returns(*tag_index).to_vec();
 
-            println!(
-                "suspend_to tag params: {:?}\ntag return_types: {:?}",
-                tag_param_types, return_types
-            );
-
-            // ishmis: assuming name not on state stack?? (update: it has to be for us to have a concrete ref to it)
             let params = state.peekn(tag_param_types.len() + 1); // tag params + handler
-
-            println!(
-                "params to suspendto are {:?}, param_count: {:?}",
-                params,
-                params.len()
-            );
 
             let param_count = params.len();
             let (named_handler_obj, params) = params.split_last().unwrap();
@@ -3071,17 +3031,8 @@ pub fn translate_operator(
                 &return_types,
             );
 
-            println!(
-                "suspend_to: about to pop {}, stack has size {}",
-                param_count,
-                state.stack.len()
-            );
-
             state.popn(param_count);
-            println!("suspend_to: return vals were: {:?}", return_values);
             state.pushn(&return_values);
-
-            println!("finished handling suspendTo");
         }
 
         Operator::GlobalAtomicGet { .. }

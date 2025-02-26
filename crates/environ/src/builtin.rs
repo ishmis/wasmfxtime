@@ -271,6 +271,10 @@ macro_rules! foreach_builtin_function {
             // `value_contref` and `value_revision` together encode
             // the Option<VMContObj>, as in previous libcall.
             table_fill_cont_obj(vmctx: vmctx, table: i32, dst: i64, value_contref: pointer, value_revision: i64, len: i64) -> bool;
+            // Returns an index for Wasm's `table.grow` instruction for `handlerobj`s
+            table_grow_handler_obj(vmctx: vmctx, table: i32, delta: i64, init_handlerref: pointer) -> pointer;
+            // Returns an index for Wasm's `table.fill` instruction for `handlerobj`s.
+            table_fill_handler_obj(vmctx: vmctx, table: i32, dst: i64, value_contref: pointer, len: i64) -> bool;
         }
     };
 }
@@ -415,6 +419,7 @@ impl BuiltinFunctionIndex {
             (@get table_grow_func_ref pointer) => (TrapSentinel::NegativeTwo);
             (@get table_grow_gc_ref pointer) => (TrapSentinel::NegativeTwo);
             (@get table_grow_cont_obj pointer) => (TrapSentinel::NegativeTwo);
+            (@get table_grow_handler_obj pointer) => (TrapSentinel::NegativeTwo);
 
             // Atomics-related functions return a negative value indicating trap
             // indicate a trap.
