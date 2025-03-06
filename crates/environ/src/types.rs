@@ -424,6 +424,11 @@ pub enum WasmHeapType {
     ConcreteCont(EngineOrModuleTypeIndex),
     NoCont,
 
+    // Handler types
+    Handler,
+    ConcreteHandler(EngineOrModuleTypeIndex),
+    NoHandler,
+
     // Function types.
     Func,
     ConcreteFunc(EngineOrModuleTypeIndex),
@@ -448,6 +453,7 @@ impl From<WasmHeapTopType> for WasmHeapType {
             WasmHeapTopType::Any => Self::Any,
             WasmHeapTopType::Func => Self::Func,
             WasmHeapTopType::Cont => Self::Cont,
+            WasmHeapTopType::Handler => Self::Handler,
         }
     }
 }
@@ -460,6 +466,7 @@ impl From<WasmHeapBottomType> for WasmHeapType {
             WasmHeapBottomType::None => Self::None,
             WasmHeapBottomType::NoFunc => Self::NoFunc,
             WasmHeapBottomType::NoCont => Self::NoCont,
+            WasmHeapBottomType::NoHandler => Self::NoHandler,
         }
     }
 }
@@ -482,6 +489,9 @@ impl fmt::Display for WasmHeapType {
             Self::ConcreteArray(i) => write!(f, "array {i}"),
             Self::Struct => write!(f, "struct"),
             Self::ConcreteStruct(i) => write!(f, "struct {i}"),
+            Self::Handler => write!(f, "handler"),
+            Self::ConcreteHandler(i) => write!(f, "handler {i}"),
+            Self::NoHandler => write!(f, "nohandler"),
             Self::None => write!(f, "none"),
         }
     }
@@ -496,6 +506,7 @@ impl TypeTrace for WasmHeapType {
             Self::ConcreteArray(i) => func(i),
             Self::ConcreteFunc(i) => func(i),
             Self::ConcreteCont(i) => func(i),
+            Self::ConcreteHandler(i) => func(i),
             Self::ConcreteStruct(i) => func(i),
             _ => Ok(()),
         }
@@ -509,6 +520,7 @@ impl TypeTrace for WasmHeapType {
             Self::ConcreteArray(i) => func(i),
             Self::ConcreteFunc(i) => func(i),
             Self::ConcreteCont(i) => func(i),
+            Self::ConcreteHandler(i) => func(i),
             Self::ConcreteStruct(i) => func(i),
             _ => Ok(()),
         }
@@ -528,6 +540,8 @@ impl WasmHeapType {
             WasmHeapTopType::Func => false,
 
             WasmHeapTopType::Cont => false,
+
+            WasmHeapTopType::Handler => false,
         }
     }
 
@@ -561,6 +575,10 @@ impl WasmHeapType {
                 WasmHeapTopType::Cont
             }
 
+            WasmHeapType::Handler | WasmHeapType::ConcreteHandler(_) | WasmHeapType::NoHandler => {
+                WasmHeapTopType::Handler
+            }
+
             WasmHeapType::Any
             | WasmHeapType::Eq
             | WasmHeapType::I31
@@ -592,6 +610,10 @@ impl WasmHeapType {
                 WasmHeapBottomType::NoCont
             }
 
+            WasmHeapType::Handler | WasmHeapType::ConcreteHandler(_) | WasmHeapType::NoHandler => {
+                WasmHeapBottomType::NoHandler
+            }
+
             WasmHeapType::Any
             | WasmHeapType::Eq
             | WasmHeapType::I31
@@ -615,6 +637,8 @@ pub enum WasmHeapTopType {
     Func,
     /// The common supertype of all continuation references.
     Cont,
+    /// The common supertype of all handler references.
+    Handler,
 }
 
 /// A bottom heap type.
@@ -628,6 +652,8 @@ pub enum WasmHeapBottomType {
     NoFunc,
     /// The common subtype of all continuation references.
     NoCont,
+    /// The common subtype of all handler references.
+    NoHandler,
 }
 
 /// WebAssembly function type -- equivalent of `wasmparser`'s FuncType.
@@ -817,6 +843,52 @@ impl TypeTrace for WasmContType {
     }
 }
 
+/// A concrete handler type.
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub struct WasmHandlerType {
+    /// list of values left on stack after calling handler
+    pub values: Box<[WasmValType]>,
+}
+
+impl fmt::Display for WasmHandlerType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "(handler")?;
+        for ty in self.values.iter() {
+            write!(f, " {ty}")?;
+        }
+        write!(f, ")")
+    }
+}
+
+impl WasmHandlerType {
+    /// Constructs a new handler type.
+    pub fn new(values: Box<[WasmValType]>) -> Self {
+        WasmHandlerType { values }
+    }
+}
+
+impl TypeTrace for WasmHandlerType {
+    fn trace<F, E>(&self, func: &mut F) -> Result<(), E>
+    where
+        F: FnMut(EngineOrModuleTypeIndex) -> Result<(), E>,
+    {
+        for v in self.values.iter() {
+            v.trace(func)?;
+        }
+        Ok(())
+    }
+
+    fn trace_mut<F, E>(&mut self, func: &mut F) -> Result<(), E>
+    where
+        F: FnMut(&mut EngineOrModuleTypeIndex) -> Result<(), E>,
+    {
+        for v in self.values.iter_mut() {
+            v.trace_mut(func)?;
+        }
+        Ok(())
+    }
+}
+
 /// Represents storage types introduced in the GC spec for array and struct fields.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum WasmStorageType {
@@ -992,6 +1064,7 @@ pub enum WasmCompositeInnerType {
     Func(WasmFuncType),
     Cont(WasmContType),
     Struct(WasmStructType),
+    Handler(WasmHandlerType),
 }
 
 impl fmt::Display for WasmCompositeInnerType {
@@ -1001,6 +1074,7 @@ impl fmt::Display for WasmCompositeInnerType {
             Self::Func(ty) => fmt::Display::fmt(ty, f),
             Self::Struct(ty) => fmt::Display::fmt(ty, f),
             Self::Cont(ty) => fmt::Display::fmt(ty, f),
+            Self::Handler(ty) => fmt::Display::fmt(ty, f),
         }
     }
 }
@@ -1078,6 +1152,24 @@ impl WasmCompositeInnerType {
     pub fn unwrap_cont(&self) -> &WasmContType {
         self.as_cont().unwrap()
     }
+
+    #[inline]
+    pub fn is_handler(&self) -> bool {
+        matches!(self, Self::Handler(_))
+    }
+
+    #[inline]
+    pub fn as_handler(&self) -> Option<&WasmHandlerType> {
+        match self {
+            Self::Handler(f) => Some(f),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn unwrap_handler(&self) -> &WasmHandlerType {
+        self.as_handler().unwrap()
+    }
 }
 
 impl TypeTrace for WasmCompositeType {
@@ -1090,6 +1182,7 @@ impl TypeTrace for WasmCompositeType {
             WasmCompositeInnerType::Func(f) => f.trace(func),
             WasmCompositeInnerType::Struct(a) => a.trace(func),
             WasmCompositeInnerType::Cont(c) => c.trace(func),
+            WasmCompositeInnerType::Handler(c) => c.trace(func),
         }
     }
 
@@ -1102,6 +1195,7 @@ impl TypeTrace for WasmCompositeType {
             WasmCompositeInnerType::Func(f) => f.trace_mut(func),
             WasmCompositeInnerType::Struct(a) => a.trace_mut(func),
             WasmCompositeInnerType::Cont(c) => c.trace_mut(func),
+            WasmCompositeInnerType::Handler(c) => c.trace_mut(func),
         }
     }
 }
@@ -1194,6 +1288,20 @@ impl WasmSubType {
     #[inline]
     pub fn unwrap_cont(&self) -> &WasmContType {
         self.composite_type.inner.unwrap_cont()
+    }
+
+    pub fn is_handler(&self) -> bool {
+        self.composite_type.inner.is_handler()
+    }
+
+    #[inline]
+    pub fn as_handler(&self) -> Option<&WasmHandlerType> {
+        self.composite_type.inner.as_handler()
+    }
+
+    #[inline]
+    pub fn unwrap_handler(&self) -> &WasmHandlerType {
+        self.composite_type.inner.unwrap_handler()
     }
 
     #[inline]
@@ -2138,6 +2246,9 @@ pub trait TypeConvert {
             wasmparser::CompositeInnerType::Cont(c) => {
                 WasmCompositeInnerType::Cont(self.convert_cont_type(c))
             }
+            wasmparser::CompositeInnerType::Handler(h) => {
+                WasmCompositeInnerType::Handler(self.convert_handler_type(h))
+            }
         };
         WasmCompositeType {
             inner,
@@ -2198,6 +2309,13 @@ pub trait TypeConvert {
         }
     }
 
+    /// Converts a wasmparser handler type to a wasmtime type
+    fn convert_handler_type(&self, ty: &wasmparser::HandlerType) -> WasmHandlerType {
+        WasmHandlerType {
+            values: ty.vals.iter().map(|&f| self.convert_valtype(f)).collect(),
+        }
+    }
+
     /// Converts a wasmparser value type to a wasmtime type
     fn convert_valtype(&self, ty: wasmparser::ValType) -> WasmValType {
         match ty {
@@ -2239,6 +2357,8 @@ pub trait TypeConvert {
                 }
                 wasmparser::AbstractHeapType::Cont => WasmHeapType::Cont,
                 wasmparser::AbstractHeapType::NoCont => WasmHeapType::NoCont,
+                wasmparser::AbstractHeapType::Handler => WasmHeapType::Handler,
+                wasmparser::AbstractHeapType::NoHandler => WasmHeapType::NoHandler,
             },
             _ => unimplemented!("unsupported heap type {ty:?}"),
         }

@@ -603,6 +603,7 @@ fn initialize_tables(
                     }
 
                     WasmHeapTopType::Cont => todo!(), // TODO(dhil): cont type table.
+                    WasmHeapTopType::Handler => todo!(), // TODO(ishmis): handler type table.
                 }
             }
         }

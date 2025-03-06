@@ -54,6 +54,7 @@ pub mod mpk;
 pub(crate) mod interpreter;
 #[cfg(not(feature = "pulley"))]
 pub(crate) mod interpreter_disabled;
+mod named;
 #[cfg(not(feature = "pulley"))]
 pub(crate) use interpreter_disabled as interpreter;
 

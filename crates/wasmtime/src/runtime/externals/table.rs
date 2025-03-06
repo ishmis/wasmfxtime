@@ -192,6 +192,7 @@ impl Table {
                 }
 
                 runtime::TableElement::ContRef(_c) => todo!(), // TODO(dhil): Required for the embedder API.
+                runtime::TableElement::HandlerRef(_h) => todo!(), // TODO(ishmis)
             }
         }
     }

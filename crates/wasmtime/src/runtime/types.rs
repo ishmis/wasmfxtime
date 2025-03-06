@@ -745,6 +745,23 @@ pub enum HeapType {
     /// therefore `nocont` is a subtype of all continuation object types.
     NoCont,
 
+    /// A reference to a handler of a specific, concrete type.
+    ///
+    /// These are subtypes of `handler` and supertypes of `nohandler`.
+    ConcreteHandler(HandlerType),
+
+    /// The `handler` heap type represents a reference to any kind of a handler.
+    ///
+    /// This is the top type for the handler objects type hierarchy, and is
+    /// therefore a supertype of every handler object.
+    Handler,
+
+    /// The `nohandler` heap type represents the null handler object.
+    ///
+    /// This is the bottom type for the handler objects type hierarchy, and
+    /// therefore `nocont` is a subtype of all handler object types.
+    NoHandler,
+
     /// The abstract `none` heap type represents the null internal reference.
     ///
     /// This is the bottom type for the internal type hierarchy, and therefore
@@ -769,8 +786,11 @@ impl Display for HeapType {
             HeapType::ConcreteArray(ty) => write!(f, "(concrete array {:?})", ty.type_index()),
             HeapType::ConcreteStruct(ty) => write!(f, "(concrete struct {:?})", ty.type_index()),
             HeapType::ConcreteCont(ty) => write!(f, "(concrete cont {:?})", ty.type_index()),
+            HeapType::ConcreteHandler(ty) => write!(f, "(concrete handler {:?})", ty.type_index()),
             HeapType::Cont => write!(f, "cont"),
             HeapType::NoCont => write!(f, "nocont"),
+            HeapType::Handler => write!(f, "handler"),
+            HeapType::NoHandler => write!(f, "nohandler"),
         }
     }
 }
@@ -965,6 +985,9 @@ impl HeapType {
             | HeapType::None => HeapType::Any,
 
             HeapType::Cont | HeapType::ConcreteCont(_) | HeapType::NoCont => HeapType::Cont,
+            HeapType::Handler | HeapType::ConcreteHandler(_) | HeapType::NoHandler => {
+                HeapType::Handler
+            }
         }
     }
 
@@ -998,6 +1021,9 @@ impl HeapType {
             | HeapType::None => HeapType::None,
 
             HeapType::Cont | HeapType::ConcreteCont(_) | HeapType::NoCont => HeapType::NoCont,
+            HeapType::Handler | HeapType::ConcreteHandler(_) | HeapType::NoHandler => {
+                HeapType::NoHandler
+            }
         }
     }
 
@@ -1054,6 +1080,19 @@ impl HeapType {
             (HeapType::ConcreteCont(_), HeapType::Cont) => true,
             (HeapType::ConcreteCont(a), HeapType::ConcreteCont(b)) => a.matches(b),
             (HeapType::ConcreteCont(_), _) => false,
+
+            (HeapType::Handler, HeapType::Handler) => true,
+            (HeapType::Handler, _) => false,
+
+            (
+                HeapType::NoHandler,
+                HeapType::NoHandler | HeapType::ConcreteHandler(_) | HeapType::Handler,
+            ) => true,
+            (HeapType::NoHandler, _) => false,
+
+            (HeapType::ConcreteHandler(_), HeapType::Handler) => true,
+            (HeapType::ConcreteHandler(a), HeapType::ConcreteHandler(b)) => a.matches(b),
+            (HeapType::ConcreteHandler(_), _) => false,
 
             (
                 HeapType::None,
@@ -1140,11 +1179,14 @@ impl HeapType {
             | HeapType::Struct
             | HeapType::Cont
             | HeapType::NoCont
+            | HeapType::Handler
+            | HeapType::NoHandler
             | HeapType::None => true,
             HeapType::ConcreteFunc(ty) => ty.comes_from_same_engine(engine),
             HeapType::ConcreteArray(ty) => ty.comes_from_same_engine(engine),
             HeapType::ConcreteStruct(ty) => ty.comes_from_same_engine(engine),
             HeapType::ConcreteCont(ty) => ty.comes_from_same_engine(engine),
+            HeapType::ConcreteHandler(ty) => ty.comes_from_same_engine(engine),
         }
     }
 
@@ -1173,6 +1215,11 @@ impl HeapType {
             HeapType::NoCont => WasmHeapType::NoCont,
             HeapType::ConcreteCont(c) => {
                 WasmHeapType::ConcreteCont(EngineOrModuleTypeIndex::Engine(c.type_index()))
+            }
+            HeapType::Handler => WasmHeapType::Handler,
+            HeapType::NoHandler => WasmHeapType::NoHandler,
+            HeapType::ConcreteHandler(h) => {
+                WasmHeapType::ConcreteHandler(EngineOrModuleTypeIndex::Engine(h.type_index()))
             }
         }
     }
@@ -1206,7 +1253,9 @@ impl HeapType {
             | WasmHeapType::ConcreteStruct(EngineOrModuleTypeIndex::Module(_))
             | WasmHeapType::ConcreteStruct(EngineOrModuleTypeIndex::RecGroup(_))
             | WasmHeapType::ConcreteCont(EngineOrModuleTypeIndex::Module(_))
-            | WasmHeapType::ConcreteCont(EngineOrModuleTypeIndex::RecGroup(_)) => {
+            | WasmHeapType::ConcreteCont(EngineOrModuleTypeIndex::RecGroup(_))
+            | WasmHeapType::ConcreteHandler(EngineOrModuleTypeIndex::Module(_))
+            | WasmHeapType::ConcreteHandler(EngineOrModuleTypeIndex::RecGroup(_)) => {
                 panic!("HeapType::from_wasm_type on non-canonicalized-for-runtime-usage heap type")
             }
             WasmHeapType::Cont => HeapType::Cont,
@@ -1214,12 +1263,18 @@ impl HeapType {
             WasmHeapType::ConcreteCont(EngineOrModuleTypeIndex::Engine(idx)) => {
                 HeapType::ConcreteCont(ContType::from_shared_type_index(engine, *idx))
             }
+            WasmHeapType::Handler => HeapType::Handler,
+            WasmHeapType::NoHandler => HeapType::NoHandler,
+            WasmHeapType::ConcreteHandler(EngineOrModuleTypeIndex::Engine(idx)) => {
+                HeapType::ConcreteHandler(HandlerType::from_shared_type_index(engine, *idx))
+            }
         }
     }
 
     pub(crate) fn as_registered_type(&self) -> Option<&RegisteredType> {
         match self {
             HeapType::ConcreteCont(c) => Some(&c.registered_type),
+            HeapType::ConcreteHandler(h) => Some(&h.registered_type),
             HeapType::ConcreteFunc(f) => Some(&f.registered_type),
             HeapType::ConcreteArray(a) => Some(&a.registered_type),
             HeapType::ConcreteStruct(a) => Some(&a.registered_type),
@@ -1235,6 +1290,8 @@ impl HeapType {
             | HeapType::Struct
             | HeapType::Cont
             | HeapType::NoCont
+            | HeapType::Handler
+            | HeapType::NoHandler
             | HeapType::None => None,
         }
     }
@@ -2588,6 +2645,51 @@ impl ContType {
              engine? Didn't root the index somewhere?",
         );
         assert!(ty.is_cont());
+        Self {
+            registered_type: ty,
+        }
+    }
+}
+// Handler types
+/// A WebAssembly handler descriptor.
+#[derive(Debug, Clone, Hash)]
+pub struct HandlerType {
+    registered_type: RegisteredType,
+}
+
+impl HandlerType {
+    /// Get the engine that this function type is associated with.
+    pub fn engine(&self) -> &Engine {
+        self.registered_type.engine()
+    }
+
+    pub(crate) fn comes_from_same_engine(&self, engine: &Engine) -> bool {
+        Engine::same(self.registered_type.engine(), engine)
+    }
+
+    pub(crate) fn type_index(&self) -> VMSharedTypeIndex {
+        self.registered_type.index()
+    }
+
+    /// Does this handler type match the other handler type?
+    ///
+    /// That is, is this handler type a subtype of the other handler type?
+    ///
+    /// # Panics
+    ///
+    /// Panics if either type is associated with a different engine from the
+    /// other.
+    pub fn matches(&self, _other: &HandlerType) -> bool {
+        // TODO(ishmis): discuss this
+        todo!("Handler matches not impl!")
+    }
+
+    pub(crate) fn from_shared_type_index(engine: &Engine, index: VMSharedTypeIndex) -> HandlerType {
+        let ty = RegisteredType::root(engine, index).expect(
+            "VMSharedTypeIndex is not registered in the Engine! Wrong \
+             engine? Didn't root the index somewhere?",
+        );
+        assert!(ty.is_handler());
         Self {
             registered_type: ty,
         }

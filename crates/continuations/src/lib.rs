@@ -30,7 +30,7 @@ pub const ENABLE_DEBUG_PRINTING: bool = false;
 #[macro_export]
 macro_rules! debug_println {
     ($( $args:expr ),+ ) => {
-        #[cfg(debug_assertions)]
+        // #[cfg(debug_assertions)]
         if ENABLE_DEBUG_PRINTING {
             println!($($args),*);
         }

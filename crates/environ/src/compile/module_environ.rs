@@ -1228,7 +1228,7 @@ impl ModuleTranslation<'_> {
                 // segments, but that's left as a future optimization if
                 // necessary.
                 WasmHeapTopType::Any | WasmHeapTopType::Extern => break,
-                WasmHeapTopType::Cont => break,
+                WasmHeapTopType::Cont | WasmHeapTopType::Handler => break,
             }
 
             // Function indices can be optimized here, but fully general

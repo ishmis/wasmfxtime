@@ -15,3 +15,6 @@ pub(crate) mod baseline;
 
 #[cfg_attr(feature = "wasmfx_baseline", allow(dead_code, reason = "TODO"))]
 pub(crate) mod optimized;
+
+#[cfg_attr(feature = "wasmfx_baseline", allow(dead_code, reason = "TODO"))]
+pub(crate) mod named;

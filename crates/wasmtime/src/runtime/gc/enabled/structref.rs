@@ -597,7 +597,10 @@ unsafe impl WasmTy for Rooted<StructRef> {
             | HeapType::None
             | HeapType::NoCont
             | HeapType::Cont
-            | HeapType::ConcreteCont(_) => bail!(
+            | HeapType::ConcreteCont(_)
+            | HeapType::NoHandler
+            | HeapType::Handler
+            | HeapType::ConcreteHandler(_) => bail!(
                 "type mismatch: expected `(ref {ty})`, got `(ref {})`",
                 self._ty(store)?,
             ),
@@ -694,7 +697,10 @@ unsafe impl WasmTy for ManuallyRooted<StructRef> {
             | HeapType::None
             | HeapType::NoCont
             | HeapType::Cont
-            | HeapType::ConcreteCont(_) => bail!(
+            | HeapType::ConcreteCont(_)
+            | HeapType::NoHandler
+            | HeapType::Handler
+            | HeapType::ConcreteHandler(_) => bail!(
                 "type mismatch: expected `(ref {ty})`, got `(ref {})`",
                 self._ty(store)?,
             ),

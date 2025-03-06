@@ -64,6 +64,8 @@ pub const TRAP_TABLE_OUT_OF_BOUNDS: TrapCode =
     TrapCode::unwrap_user(Trap::TableOutOfBounds as u8 + TRAP_OFFSET);
 pub const TRAP_UNHANDLED_TAG: TrapCode =
     TrapCode::unwrap_user(Trap::UnhandledTag as u8 + TRAP_OFFSET);
+pub const TRAP_UNHANDLED_NAMED_OR_TAG: TrapCode =
+    TrapCode::unwrap_user(Trap::UnhandledNameOrTag as u8 + TRAP_OFFSET);
 pub const TRAP_CONTINUATION_ALREADY_CONSUMED: TrapCode =
     TrapCode::unwrap_user(Trap::ContinuationAlreadyConsumed as u8 + TRAP_OFFSET);
 pub const TRAP_DEBUG_ASSERTION: TrapCode =
@@ -209,6 +211,8 @@ fn reference_type(wasm_ht: WasmHeapType, pointer_type: ir::Type) -> ir::Type {
     match wasm_ht.top() {
         WasmHeapTopType::Func => pointer_type,
         WasmHeapTopType::Cont => func_environ::wasmfx_impl::vm_contobj_type(pointer_type),
+        // TODO(ishmis): check that this is right
+        WasmHeapTopType::Handler => pointer_type,
         WasmHeapTopType::Any | WasmHeapTopType::Extern => ir::types::I32,
     }
 }

@@ -3,6 +3,7 @@ use crate::translate::{
     FuncTranslationState, GlobalVariable, Heap, HeapData, StructFieldsVec, TableData, TableSize,
     TargetEnvironment,
 };
+pub(crate) use crate::wasmfx::named;
 use crate::{gc, BuiltinFunctionSignatures, TRAP_INTERNAL_ASSERT};
 use cranelift_codegen::cursor::FuncCursor;
 use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
@@ -1483,6 +1484,11 @@ impl<'a, 'func, 'module_env> Call<'a, 'func, 'module_env> {
             WasmHeapType::NoCont | WasmHeapType::ConcreteCont(_) | WasmHeapType::Cont => {
                 unreachable!()
             }
+
+            // TODO(ishmis): check this
+            WasmHeapType::NoHandler | WasmHeapType::ConcreteHandler(_) | WasmHeapType::Handler => {
+                unreachable!("no")
+            }
         }
 
         // Load the caller's `VMSharedTypeIndex.
@@ -1706,6 +1712,7 @@ impl<'module_environment> TargetEnvironment for FuncEnvironment<'module_environm
             WasmHeapTopType::Extern | WasmHeapTopType::Any => true,
             WasmHeapTopType::Func => false,
             WasmHeapTopType::Cont => false,
+            WasmHeapTopType::Handler => false,
         };
         (ty, needs_stack_map)
     }
@@ -1786,7 +1793,7 @@ impl FuncEnvironment<'_> {
         } else {
             debug_assert!(matches!(
                 ty.top(),
-                WasmHeapTopType::Func | WasmHeapTopType::Cont
+                WasmHeapTopType::Func | WasmHeapTopType::Cont | WasmHeapTopType::Handler
             ));
             match ty.top() {
                 WasmHeapTopType::Func => {
@@ -1800,6 +1807,11 @@ impl FuncEnvironment<'_> {
                     args.extend_from_slice(&[contref, revision]);
                     self.builtin_functions
                         .table_grow_cont_obj(&mut builder.func)
+                }
+                WasmHeapTopType::Handler => {
+                    args.push(init_value);
+                    self.builtin_functions
+                        .table_grow_handler_obj(&mut builder.func)
                 }
 
                 _ => panic!("unsupported table type."),
@@ -1844,6 +1856,13 @@ impl FuncEnvironment<'_> {
                     table_entry_addr,
                     0,
                 ))
+            }
+            // Handler types.
+            WasmHeapTopType::Handler => {
+                let (table_entry_addr, flags) = table_data.prepare_table_addr(self, builder, index);
+                Ok(builder
+                    .ins()
+                    .load(self.pointer_type(), flags, table_entry_addr, 0))
             }
             // Function types.
             WasmHeapTopType::Func => {
@@ -1902,6 +1921,12 @@ impl FuncEnvironment<'_> {
                 builder.ins().store(flags, value, elem_addr, 0);
                 Ok(())
             }
+            // Handler types.
+            WasmHeapTopType::Handler => {
+                let (elem_addr, flags) = table_data.prepare_table_addr(self, builder, index);
+                builder.ins().store(flags, value, elem_addr, 0);
+                Ok(())
+            }
         }
     }
 
@@ -1937,6 +1962,11 @@ impl FuncEnvironment<'_> {
                     args.extend_from_slice(&[contref, revision]);
                     self.builtin_functions
                         .table_fill_cont_obj(&mut builder.func)
+                }
+                WasmHeapTopType::Handler => {
+                    args.push(val);
+                    self.builtin_functions
+                        .table_fill_handler_obj(&mut builder.func)
                 }
                 _ => panic!("unsupported table type"),
             }
@@ -2302,6 +2332,7 @@ impl FuncEnvironment<'_> {
                 // TODO do this nicer
                 wasmfx_impl::assemble_contobj(self, builder, zero, zero)
             }
+            WasmHeapTopType::Handler => builder.ins().iconst(self.pointer_type(), 0),
         })
     }
 
@@ -3302,6 +3333,35 @@ impl FuncEnvironment<'_> {
         wasmfx_impl::translate_switch(self, builder, tag_index, contobj, switch_args, return_types)
     }
 
+    pub fn translate_resume_with(
+        &mut self,
+        state: &mut FuncTranslationState,
+        builder: &mut FunctionBuilder<'_>,
+        arity: usize,
+        type_index: u32,
+        resumetable: &[(u32, Option<ir::Block>)],
+    ) -> WasmResult<Vec<ir::Value>> {
+        named::translate_resume_with(self, state, builder, arity, type_index, resumetable)
+    }
+
+    pub fn translate_suspend_to(
+        &mut self,
+        builder: &mut FunctionBuilder<'_>,
+        tag_index: u32,
+        hdlobj: ir::Value,
+        suspend_args: &[ir::Value],
+        tag_return_types: &[WasmValType],
+    ) -> Vec<ir::Value> {
+        named::translate_suspend_to(
+            self,
+            builder,
+            tag_index,
+            hdlobj,
+            suspend_args,
+            tag_return_types,
+        )
+    }
+
     pub fn continuation_arguments(&self, index: u32) -> &[WasmValType] {
         let idx = self.module.types[TypeIndex::from_u32(index)];
         self.types[self.types[idx].unwrap_cont().clone().interned_type_index()]
@@ -3314,6 +3374,11 @@ impl FuncEnvironment<'_> {
         self.types[self.types[idx].unwrap_cont().clone().interned_type_index()]
             .unwrap_func()
             .returns()
+    }
+
+    pub fn named_handler(&self, hdl_index: u32) {
+        let idx = self.module.types[TypeIndex::from_u32(hdl_index)];
+        let _ = self.types[idx].unwrap_handler();
     }
 
     pub fn tag_params(&self, tag_index: u32) -> &[WasmValType] {

@@ -284,6 +284,10 @@ impl Val {
                         unimplemented!()
                     } // TODO(dhil): Need to do this for the embedder API.
 
+                    HeapType::NoHandler | HeapType::ConcreteHandler(_) | HeapType::Handler => {
+                        unimplemented!()
+                    } // TODO(ishmis)
+
                     HeapType::Extern => ExternRef::_from_raw(store, raw.get_externref()).into(),
 
                     HeapType::NoExtern => Ref::Extern(None),

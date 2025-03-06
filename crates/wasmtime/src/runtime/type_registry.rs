@@ -827,6 +827,7 @@ impl TypeRegistryInner {
                     .into(),
             ),
             wasmtime_environ::WasmCompositeInnerType::Cont(_) => None, // TODO(dhil): revisit later.
+            wasmtime_environ::WasmCompositeInnerType::Handler(_) => None, // TODO(ishmis): revisit later.
         };
 
         // Add the type to our slab.

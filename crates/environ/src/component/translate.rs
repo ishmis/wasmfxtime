@@ -521,12 +521,9 @@ impl<'a, 'data> Translator<'a, 'data> {
                             core_func_index += 1;
                             LocalInitializer::ResourceRep(resource, ty)
                         }
-
-                        wasmparser::CanonicalFunction::ThreadSpawn { .. }
-                        | wasmparser::CanonicalFunction::ThreadHwConcurrency => {
+                        wasmparser::CanonicalFunction::ThreadSpawn { .. } => {
                             bail!("unsupported intrinsic")
                         }
-
                         wasmparser::CanonicalFunction::TaskBackpressure
                         | wasmparser::CanonicalFunction::TaskPoll { .. }
                         | wasmparser::CanonicalFunction::TaskYield { .. }
@@ -552,6 +549,7 @@ impl<'a, 'data> Translator<'a, 'data> {
                         | wasmparser::CanonicalFunction::TaskWait { .. } => {
                             bail!("unsupported intrinsic")
                         }
+                        wasmparser::CanonicalFunction::ThreadAvailableParallelism => todo!(),
                     };
                     self.result.initializers.push(init);
                 }

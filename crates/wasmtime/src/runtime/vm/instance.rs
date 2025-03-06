@@ -1087,6 +1087,7 @@ impl Instance {
                         }),
                     )?,
                     WasmHeapTopType::Cont => todo!(), // TODO(dhil): We should have a bespoke cont table type first.
+                    WasmHeapTopType::Handler => todo!(),
                 }
             }
         }

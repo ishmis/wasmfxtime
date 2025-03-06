@@ -730,6 +730,9 @@ unsafe impl WasmTy for Rooted<ArrayRef> {
             | HeapType::Cont
             | HeapType::NoCont
             | HeapType::ConcreteCont(_)
+            | HeapType::Handler
+            | HeapType::NoHandler
+            | HeapType::ConcreteHandler(_)
             | HeapType::None => bail!(
                 "type mismatch: expected `(ref {ty})`, got `(ref {})`",
                 self._ty(store)?,
@@ -827,6 +830,9 @@ unsafe impl WasmTy for ManuallyRooted<ArrayRef> {
             | HeapType::Cont
             | HeapType::NoCont
             | HeapType::ConcreteCont(_)
+            | HeapType::Handler
+            | HeapType::NoHandler
+            | HeapType::ConcreteHandler(_)
             | HeapType::None => bail!(
                 "type mismatch: expected `(ref {ty})`, got `(ref {})`",
                 self._ty(store)?,

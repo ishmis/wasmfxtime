@@ -187,6 +187,7 @@ fn match_heap(expected: WasmHeapType, actual: WasmHeapType, desc: &str) -> Resul
         // no longer suffice to check whether canonicalized type IDs are equal.
         (H::ConcreteArray(actual), H::ConcreteArray(expected)) => actual == expected,
         (H::ConcreteCont(actual), H::ConcreteCont(expected)) => actual == expected,
+        (H::ConcreteHandler(actual), H::ConcreteHandler(expected)) => actual == expected,
         (H::ConcreteFunc(actual), H::ConcreteFunc(expected)) => actual == expected,
         (H::ConcreteStruct(actual), H::ConcreteStruct(expected)) => actual == expected,
 
@@ -208,6 +209,13 @@ fn match_heap(expected: WasmHeapType, actual: WasmHeapType, desc: &str) -> Resul
         (H::NoCont, H::NoCont) => true,
         (_, H::NoCont) => false,
         (_, H::ConcreteCont(_)) => false,
+
+        (H::NoHandler | H::ConcreteHandler(_) | H::Handler, H::Handler) => true,
+        (_, H::Handler) => false,
+        (H::NoHandler, H::ConcreteHandler(_)) => true,
+        (H::NoHandler, H::NoHandler) => true,
+        (_, H::NoHandler) => false,
+        (_, H::ConcreteHandler(_)) => false,
 
         (H::NoExtern, H::NoExtern) => true,
         (_, H::NoExtern) => false,

@@ -167,6 +167,7 @@ pub trait GcTypeLayouts {
             WasmCompositeInnerType::Struct(ty) => Some(self.struct_layout(ty).into()),
             WasmCompositeInnerType::Func(_) => None,
             WasmCompositeInnerType::Cont(_) => None,
+            WasmCompositeInnerType::Handler(_) => None,
         }
     }
 

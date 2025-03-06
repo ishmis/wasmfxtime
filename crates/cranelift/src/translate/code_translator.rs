@@ -2977,6 +2977,63 @@ pub fn translate_operator(
             state.popn(arity);
             state.pushn(&switch_return_values)
         }
+        Operator::ResumeWith {
+            named_cont_type_index,
+            resume_table,
+        } => {
+            // We translate the block indices in the resumetable to actual Blocks.
+            let mut resumetable = vec![];
+            for handle in &resume_table.handlers {
+                match handle {
+                    wasmparser::Handle::OnLabel { tag, label } => {
+                        let i = state.control_stack.len() - 1 - (*label as usize);
+                        let frame = &mut state.control_stack[i];
+                        // This is side-effecting!
+                        frame.set_branched_to_exit();
+                        resumetable.push((*tag, Some(frame.br_destination())));
+                    }
+                    wasmparser::Handle::OnSwitch { tag } => {
+                        resumetable.push((*tag, None));
+                    }
+                }
+            }
+
+            let arity = environ.continuation_arguments(*named_cont_type_index).len();
+            let cont_return_vals = environ.translate_resume_with(
+                state,
+                builder,
+                arity,
+                *named_cont_type_index,
+                resumetable.as_slice(),
+            )?;
+            state.popn(arity); // arguments + handler (continuation popped during translation)
+            state.pushn(&cont_return_vals);
+        }
+        Operator::SuspendTo {
+            handler_type_index,
+            tag_index,
+        } => {
+            environ.named_handler(*handler_type_index);
+
+            let tag_param_types = environ.tag_params(*tag_index).to_vec();
+            let return_types = environ.tag_returns(*tag_index).to_vec();
+
+            let params = state.peekn(tag_param_types.len() + 1); // tag params + handler
+
+            let param_count = params.len();
+            let (named_handler_obj, params) = params.split_last().unwrap();
+
+            let return_values = environ.translate_suspend_to(
+                builder,
+                *tag_index,
+                *named_handler_obj,
+                params,
+                &return_types,
+            );
+
+            state.popn(param_count);
+            state.pushn(&return_values);
+        }
 
         Operator::GlobalAtomicGet { .. }
         | Operator::GlobalAtomicSet { .. }

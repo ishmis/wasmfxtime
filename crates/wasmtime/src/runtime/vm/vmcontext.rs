@@ -496,6 +496,7 @@ impl VMGlobalDefinition {
                 }
                 WasmHeapTopType::Func => *global.as_func_ref_mut() = raw.get_funcref().cast(),
                 WasmHeapTopType::Cont => *global.as_func_ref_mut() = raw.get_funcref().cast(), // TODO(dhil): temporary hack.
+                WasmHeapTopType::Handler => todo!("handler not impl from_val_row"), // TODO(ishmis)
             },
         }
         Ok(global)
@@ -530,6 +531,7 @@ impl VMGlobalDefinition {
                 }),
                 WasmHeapTopType::Func => ValRaw::funcref(self.as_func_ref().cast()),
                 WasmHeapTopType::Cont => unimplemented!(), // TODO(dhil): Need a raw continuation entity first.
+                WasmHeapTopType::Handler => unimplemented!(), // TODO(ishmis)
             },
         })
     }

@@ -154,6 +154,7 @@ fn read_field_at_addr(
                     builder.func.dfg.first_result(call_inst)
                 }
                 WasmHeapTopType::Cont => unimplemented!(), // TODO(dhil): revisit later.
+                WasmHeapTopType::Handler => unimplemented!(), // TODO(ishmis): revisit later.
             },
         },
     };
@@ -1056,6 +1057,8 @@ pub fn translate_ref_test(
         | WasmHeapType::NoFunc
         | WasmHeapType::Cont
         | WasmHeapType::NoCont
+        | WasmHeapType::Handler
+        | WasmHeapType::NoHandler
         | WasmHeapType::I31 => unreachable!("handled top, bottom, and i31 types above"),
 
         // For these abstract but non-top and non-bottom types, we check the
@@ -1109,6 +1112,7 @@ pub fn translate_ref_test(
             func_env.is_subtype(builder, actual_shared_ty, expected_shared_ty)
         }
         WasmHeapType::ConcreteCont(_) => todo!(), // TODO(dhil): FIXME for GC support.
+        WasmHeapType::ConcreteHandler(_) => todo!(), // TODO(ishmis): FIXME for GC support.
     };
     builder.ins().jump(continue_block, &[result]);
 
@@ -1435,6 +1439,9 @@ impl FuncEnvironment<'_> {
                 unreachable!()
             }
             WasmHeapType::Cont | WasmHeapType::ConcreteCont(_) | WasmHeapType::NoCont => {
+                unreachable!()
+            }
+            WasmHeapType::Handler | WasmHeapType::ConcreteHandler(_) | WasmHeapType::NoHandler => {
                 unreachable!()
             }
         };

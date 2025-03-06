@@ -136,6 +136,12 @@ impl Global {
                             "Embedder support for continuations has not yet been implemented!"
                         ),
 
+                        HeapType::NoHandler | HeapType::ConcreteHandler(_) | HeapType::Handler => {
+                            todo!(
+                                "Embedder support for named handlers has not yet been implemented!"
+                            )
+                        }
+
                         HeapType::NoExtern => Ref::Extern(None),
 
                         HeapType::Any
