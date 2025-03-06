@@ -466,21 +466,7 @@ pub(crate) mod typed_continuation_helpers {
             let revision = builder.ins().load(I64, mem_flags, self.address, offset);
             revision
         }
-
-        /// Gets the revision counter the a given continuation
-        /// reference.
-        #[allow(clippy::cast_possible_truncation, reason = "TODO")]
-        pub fn get_revision_32<'a>(
-            &mut self,
-            _env: &mut crate::func_environ::FuncEnvironment<'a>,
-            builder: &mut FunctionBuilder,
-        ) -> ir::Value {
-            let mem_flags = ir::MemFlags::trusted();
-            let offset = wasmtime_continuations::offsets::vm_cont_ref::REVISION as i32;
-            let revision = builder.ins().load(I32, mem_flags, self.address, offset);
-            revision
-        }
-
+        
         /// Sets the revision counter on the given continuation
         /// reference to `revision + 1`.
         #[allow(clippy::cast_possible_truncation, reason = "TODO")]

@@ -406,22 +406,10 @@ pub(crate) fn translate_resume_with<'a>(
         state.push2(resume_contref, resume_contobj);
         let (_, resume_args) = state.peekn(arity + 1).split_last().unwrap();
 
-        // ishmis: use reivision to add just the right amount of padding
         let count = builder.ins().iconst(I32, resume_args.len() as i64);
-        let rev_32 = vmcontref.get_revision_32(env, builder);
-        let ac_count = builder.ins().iadd(count, rev_32);
-
-        emit_debug_println!(
-            env,
-            builder,
-            "[translate_resume_with]: count is {}, ac_count is {}",
-            count,
-            ac_count
-        );
-
-        // ishmis:
+        
         // current solution is to just use the vmcontref as the handler name directly
-        vmcontref_store_payloads(env, builder, &resume_args, ac_count, resume_contref);
+        vmcontref_store_payloads(env, builder, &resume_args, count, resume_contref);
 
         // Splice together stack chains:
         // Connect the end of the chain starting at `resume_contref` to the currently active chain.
